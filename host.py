@@ -587,6 +587,8 @@ class App:
         self.wiki_path = Path(args.wiki)
         self.editor_root = Path(args.editor_root)
         self.tracker = Tracker(self.wiki_path.parent, args.backup_interval)
+        self.read_pass = args.read_pass
+        self.write_pass = args.write_pass or args.read_pass
         self.admin_pass = args.admin_pass
         self.threads = Threads(
             Path(args.threads),
@@ -656,6 +658,18 @@ def make_handler(app: App):
             n = int(self.headers.get("Content-Length", "0"))
             return json.loads(self.rfile.read(n).decode()) if n > 0 else {}
 
+        def _check_pass(self, header, expected, label):
+            if not expected:
+                return
+            if self.headers.get(header, "") != expected:
+                raise PermissionError(f"Wiki {label} password is incorrect")
+
+        def require_read_pass(self):
+            self._check_pass("X-Maybelle-Read-Pass", app.read_pass, "read")
+
+        def require_write_pass(self):
+            self._check_pass("X-Maybelle-Write-Pass", app.write_pass, "write")
+
         def do_OPTIONS(self):
             self.send_response(204)
             self.end_headers()
@@ -664,6 +678,7 @@ def make_handler(app: App):
             p = urlparse(self.path).path
             try:
                 if p in ("/api/status", "/api/status/"):
+                    self.require_read_pass()
                     return self.json(
                         {
                             "ok": True,
@@ -673,15 +688,19 @@ def make_handler(app: App):
                             "editor_root": str(app.editor_root.resolve()),
                             "threads": app.threads.status(),
                             "admin_password_enabled": bool(app.admin_pass),
+                            "read_password_enabled": bool(app.read_pass),
+                            "write_password_enabled": bool(app.write_pass),
                         }
                     )
                 if p in ("/api/wiki", "/api/wiki/"):
+                    self.require_read_pass()
                     return self.json(app.read_wiki())
                 if p in ("/api/threads/status", "/api/threads/status/"):
                     return self.json({"ok": True, "threads": app.threads.status()})
                 if p in ("/api/threads", "/api/threads/"):
                     return self.json(app.threads.list())
                 if p in ("/api/admin/backups", "/api/admin/backups/"):
+                    self.require_read_pass()
                     return self.json(app.tracker.list_backups())
                 if p in ("/", "/index.html", "/page.html"):
                     return self.file(app.editor_root / "page.html")
@@ -702,6 +721,7 @@ def make_handler(app: App):
             try:
                 d = self.body()
                 if p in ("/api/wiki", "/api/wiki/"):
+                    self.require_write_pass()
                     return self.json(
                         {
                             "ok": True,
@@ -713,6 +733,7 @@ def make_handler(app: App):
                         }
                     )
                 if p in ("/api/admin/backup", "/api/admin/backup/"):
+                    self.require_write_pass()
                     app.admin(d.get("admin_pass"))
                     return self.json(
                         {
@@ -721,6 +742,7 @@ def make_handler(app: App):
                         }
                     )
                 if p in ("/api/admin/backup/read", "/api/admin/backup/read/"):
+                    self.require_read_pass()
                     app.admin(d.get("admin_pass"))
                     return self.json(app.tracker.read_backup(d.get("name")))
                 if p in ("/api/threads/claim", "/api/threads/claim/"):
@@ -799,6 +821,20 @@ def parse_args():
     p.add_argument("--disable-forum", action="store_true")
     p.add_argument("--forum-password", default="")
     p.add_argument("--admin-pass", default="")
+    p.add_argument(
+        "--pull-pass",
+        "--read-pass",
+        dest="read_pass",
+        default="",
+        help="Password required to read the wiki",
+    )
+    p.add_argument(
+        "--push-pass",
+        "--write-pass",
+        dest="write_pass",
+        default="",
+        help="Password required to write the wiki",
+    )
     p.add_argument("--backup-interval", type=int, default=10)
     return p.parse_args()
 
@@ -834,6 +870,13 @@ def main():
     print("Threads:", Path(args.threads).resolve())
     print("Editor: ", app.editor_root.resolve())
     print("Backups:", (app.wiki_path.parent / "backups").resolve())
+    print("Read:   ", "enabled" if app.read_pass else "disabled")
+    print(
+        "Write:  ",
+        "enabled"
+        if app.write_pass and app.write_pass != app.read_pass
+        else ("mirrors read pass" if app.write_pass else "disabled"),
+    )
     print("Admin:  ", "enabled" if args.admin_pass else "disabled")
     try:
         httpd.serve_forever()

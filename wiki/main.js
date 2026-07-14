@@ -1,4 +1,5 @@
 const STORAGE_KEY = "maybelle.wiki.editor.v3";
+const AUTH_STORAGE_KEY = "maybelle.wiki.auth.v1";
 const BACKEND_MODE =
   location.protocol === "http:" || location.protocol === "https:";
 const BACKEND_BASE_URL = BACKEND_MODE ? location.origin : "";
@@ -8,6 +9,7 @@ let appData = createEmptyData(),
   selectedEntryId = null,
   autosaveTimer = null,
   activeTextField = null;
+let wikiAuth = loadWikiAuth();
 const CANON_ROOTS = [
   ["А", "Existence", "Being, presence, reality"],
   ["Б", "Becoming", "Change, emergence, transformation"],
@@ -87,6 +89,64 @@ function stableImportedId(prefix, item, index) {
     h = Math.imul(h, 16777619);
   }
   return `${prefix}-import-${index + 1}-${(h >>> 0).toString(36)}`;
+}
+function loadWikiAuth() {
+  try {
+    return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function saveWikiAuth() {
+  localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(wikiAuth));
+}
+function wikiAuthHeaders(mode) {
+  const headers = {};
+  if (mode === "read") {
+    if (wikiAuth.readPass) headers["X-Maybelle-Read-Pass"] = wikiAuth.readPass;
+  } else if (mode === "write") {
+    const pass = wikiAuth.writePass || wikiAuth.readPass;
+    if (pass) headers["X-Maybelle-Write-Pass"] = pass;
+  }
+  return headers;
+}
+async function promptForWikiPass(mode) {
+  const label = mode === "read" ? "read" : "write";
+  const current =
+    mode === "read"
+      ? wikiAuth.readPass || ""
+      : wikiAuth.writePass || wikiAuth.readPass || "";
+  const pass =
+    prompt(`Wiki ${label} password (leave blank to cancel):`, current) || "";
+  if (!pass) return "";
+  if (mode === "read") {
+    wikiAuth.readPass = pass;
+    if (!wikiAuth.writePass) wikiAuth.writePass = pass;
+  } else {
+    wikiAuth.writePass = pass;
+  }
+  saveWikiAuth();
+  return pass;
+}
+async function backendRequest(path, options = {}, mode = "read", retry = true) {
+  const r = await fetch(`${BACKEND_BASE_URL}${path}`, {
+    cache: "no-store",
+    ...options,
+    headers: {
+      ...(options.headers || {}),
+      ...wikiAuthHeaders(mode),
+    },
+  });
+  const d = await r.json().catch(() => ({}));
+  const authError =
+    typeof d.error === "string" && d.error.startsWith("Wiki ");
+  if ((r.status === 401 || r.status === 403) && BACKEND_MODE && retry && authError) {
+    const pass = await promptForWikiPass(mode);
+    if (pass) return backendRequest(path, options, mode, false);
+  }
+  if (!r.ok || d.ok === false)
+    throw new Error(d.error || `Backend returned HTTP ${r.status}`);
+  return d;
 }
 function repairDuplicateIdsInData(data) {
   const sr = new Set();
@@ -193,22 +253,19 @@ function setBackendBanner() {
   }
 }
 async function loadFromBackend() {
-  const r = await fetch(`${BACKEND_BASE_URL}/api/wiki`, { cache: "no-store" });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.ok === false)
-    throw new Error(d.error || `Backend returned HTTP ${r.status}`);
-  return normalizeImportedData(d);
+  return normalizeImportedData(await backendRequest("/api/wiki", {}, "read"));
 }
 async function saveToBackend(show = true) {
   syncEditorsToData();
-  const r = await fetch(`${BACKEND_BASE_URL}/api/wiki`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(appData),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok || d.ok === false)
-    throw new Error(d.error || `Backend returned HTTP ${r.status}`);
+  const d = await backendRequest(
+    "/api/wiki",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(appData),
+    },
+    "write",
+  );
   if (show)
     setStatus(
       `Saved wiki to server file (${d.path || "wiki file"}).`,
@@ -883,12 +940,7 @@ async function refreshBackups() {
       '<div class="empty-state">Backup browser requires the Python host.</div>';
     return;
   }
-  const r = await fetch(`${BACKEND_BASE_URL}/api/admin/backups`, {
-    cache: "no-store",
-  });
-  const d = await r.json();
-  if (!r.ok || d.ok === false)
-    throw new Error(d.error || "Could not load backups");
+  const d = await backendRequest("/api/admin/backups", {}, "read");
   const backupRows = (d.backups || [])
     .map(
       (b) =>
@@ -904,14 +956,15 @@ async function refreshBackups() {
 }
 async function viewBackup(name) {
   const admin_pass = prompt("Admin password (leave blank if disabled):") || "";
-  const r = await fetch(`${BACKEND_BASE_URL}/api/admin/backup/read`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, admin_pass }),
-  });
-  const d = await r.json();
-  if (!r.ok || d.ok === false)
-    throw new Error(d.error || "Could not read backup");
+  const d = await backendRequest(
+    "/api/admin/backup/read",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, admin_pass }),
+    },
+    "read",
+  );
   $("backupPreview").classList.remove("hidden");
   $("backupPreview").textContent = JSON.stringify(d.backup, null, 2);
 }
@@ -921,13 +974,15 @@ async function forceBackup() {
     return;
   }
   const admin_pass = prompt("Admin password (leave blank if disabled):") || "";
-  const r = await fetch(`${BACKEND_BASE_URL}/api/admin/backup`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ admin_pass }),
-  });
-  const d = await r.json();
-  if (!r.ok || d.ok === false) throw new Error(d.error || "Backup failed");
+  const d = await backendRequest(
+    "/api/admin/backup",
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ admin_pass }),
+    },
+    "write",
+  );
   setStatus(`Created backup: ${d.backup_path}`, "success");
   await refreshBackups();
 }
