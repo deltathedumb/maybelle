@@ -1,13 +1,272 @@
-<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Maybelle Wiki</title><link rel="stylesheet" href="/styles.css"></head><body>
-<div class="layout"><aside><div class="brand"><h1>Maybelle</h1><div>local wiki editor</div></div><div class="side-section"><div class="side-title">Wiki</div><button class="nav-button active" data-view="home">Main Page</button><button class="nav-button" data-view="roots">Root Glyphs</button><button class="nav-button" data-view="dictionary">Dictionary</button><button class="nav-button" data-view="grammar">Grammar Notes</button><button class="nav-button" data-view="threads">Threads</button><button class="nav-button" data-view="archive">Archive</button></div><div class="side-section"><div class="side-title">Recent Roots</div><div id="quickRoots" class="quick-list"></div></div><div class="side-section"><div class="side-title">Recent Words</div><div id="quickEntries" class="quick-list"></div></div></aside>
-<main><div class="page"><div class="topbar"><div><h1 id="viewTitle" class="page-title">Main Page</h1><div id="viewSubtitle" class="page-subtitle">A fluid local wiki for Maybelle.</div></div><div class="top-actions"><button id="saveLocalButton" class="primary">Save Wiki</button><button id="exportButton">Export Archive</button><button id="keyboardOpenTopButton">Keyboard</button></div></div><div id="backendModeBanner" class="status"></div><div id="status" class="status"></div>
-<section id="homeView" class="view"><div class="wiki-box"><h2>Overview</h2><div class="box-body"><div class="stats"><div class="stat"><div id="rootCount" class="stat-number">0</div><div class="stat-label">root glyphs</div></div><div class="stat"><div id="entryCount" class="stat-number">0</div><div class="stat-label">dictionary words</div></div><div class="stat"><div id="fieldCount" class="stat-number">0</div><div class="stat-label">custom fields</div></div></div></div></div><div class="wiki-box"><h2>Quick Editing</h2><div class="box-body"><div class="toolbar"><button id="homeAddRootButton">Add Root Glyph</button><button id="homeAddEntryButton">Add Word</button><button data-view-jump="grammar">Open Grammar Notes</button></div><p class="muted">Words are sorted by description. Categories have been removed. Compound entries show root breakdowns automatically.</p></div></div><div class="wiki-box"><h2>Root Table Preview</h2><div class="box-body"><table class="root-table"><thead><tr><th>Glyph</th><th>Root Name</th><th>Description</th></tr></thead><tbody id="rootTablePreview"></tbody></table></div></div></section>
-<section id="rootsView" class="view hidden"><div class="workspace"><div class="wiki-box"><h2>Root Index</h2><div class="box-body"><div class="searchbar"><input id="rootSearch" placeholder="Search roots..."><button id="addRootButton">Add Root</button></div><div id="rootList" class="list-panel"></div></div></div><div class="editor-card"><div class="editor-card-header"><strong id="rootEditorTitle">Root Editor</strong><button id="deleteRootButton" class="danger small">Delete Root</button></div><div class="editor-card-body"><div id="rootEmptyState" class="empty-state">Select a root or create a new one.</div><div id="rootEditorFields" class="hidden"><div class="grid-3"><div class="field-group"><label>Glyph</label><input id="rootGlyphInput" class="glyph-input" maxlength="2" placeholder="Ж"></div><div class="field-group"><label>Root name</label><input id="rootNameInput" placeholder="Person"></div><div class="field-group"><label>Description</label><input id="rootDescriptionInput" placeholder="Individual intelligent being"></div></div><div class="field-group"><label>Notes</label><textarea id="rootNotesInput"></textarea></div></div></div></div></div></section>
-<section id="dictionaryView" class="view hidden"><div class="workspace"><div class="wiki-box"><h2>Word Index</h2><div class="box-body"><div class="searchbar"><input id="entrySearch" placeholder="Search words..."><button id="addEntryButton">Add Word</button></div><div id="entryList" class="list-panel"></div></div></div><div class="editor-card"><div class="editor-card-header"><strong id="entryEditorTitle">Word Editor</strong><button id="deleteEntryButton" class="danger small">Delete Word</button></div><div class="editor-card-body"><div id="entryEmptyState" class="empty-state">Select a word or create a new one.</div><div id="entryEditorFields" class="hidden"><div class="grid-2"><div class="field-group"><label>Compound</label><input id="entryCompoundInput" class="compound-input" placeholder="ЖИ"></div><div class="field-group"><label>Description</label><input id="entryDescriptionInput" placeholder="Hello / Hi"></div></div><div class="field-group"><label>Literal meaning</label><input id="entryLiteralInput" placeholder="Person + Relation"></div><div class="field-group"><label>Notes</label><textarea id="entryNotesInput"></textarea></div><div class="extra-fields"><div class="toolbar"><strong>Extra Fields</strong><button id="addExtraFieldButton" class="small">Add Field</button></div><div id="entryExtraFields"></div></div><div id="entryBreakdown" class="wiki-box"><h2>Root Breakdown</h2><div class="box-body"></div></div></div></div></div></div></section>
-<section id="grammarView" class="view hidden"><div class="wiki-box"><h2>Grammar Notes</h2><div class="box-body"><textarea id="grammarNotesInput" style="min-height:420px" placeholder="〰 = sentence-final question marker"></textarea></div></div></section>
-<section id="threadsView" class="view hidden"><div class="wiki-box"><h2>Threads</h2><div class="box-body"><p class="muted">Create named discussion threads and post persistent rich-text messages with optional images.</p><div id="threadsDisabledNotice" class="empty-state hidden">Threads are disabled.</div><div id="threadsStandaloneNotice" class="empty-state hidden">Threads require the Python host.</div><div id="threadsMainPanel" class="threads-layout"><div><div class="wiki-box"><h2>Create / Join</h2><div class="box-body"><label>Username</label><input id="threadUsernameInput" maxlength="32"><label>Thread password</label><input id="threadPasswordInput" type="password"><label>New thread name</label><input id="threadNameInput" maxlength="80"><div class="toolbar"><button id="claimThreadUsernameButton" class="primary">Claim Username</button><button id="createThreadButton">Create Thread</button><button id="refreshThreadsButton">Refresh</button></div></div></div><h3>Thread Index</h3><div id="threadList" class="thread-list"></div></div><div><div class="editor-card"><div class="editor-card-header"><strong id="selectedThreadTitle">No thread selected</strong></div><div class="editor-card-body"><div id="threadAdminControls" class="toolbar"></div><div id="threadMessages" class="thread-messages"></div><div class="rich-toolbar"><button data-rich-command="bold"><b>B</b></button><button data-rich-command="italic"><i>I</i></button><button data-rich-command="underline"><u>U</u></button><button data-rich-command="insertUnorderedList">List</button><button id="richLinkButton">Link</button><button data-rich-command="removeFormat">Clear</button></div><div id="threadRichEditor" class="rich-editor" contenteditable="true" data-placeholder="Write a rich-text message..."></div><div class="thread-compose-actions"><div><label>Images</label><input id="threadImageInput" type="file" accept="image/*" multiple></div><button id="sendThreadMessageButton" class="primary">Send Message</button></div><div id="threadImagePreview" class="thread-image-preview"></div></div></div></div></div></div></div></section>
-<section id="archiveView" class="view hidden"><div class="wiki-box"><h2>Archive</h2><div class="box-body"><div class="grid-2"><div><label>Archive encryption key</label><input id="encryptionKey" type="password" placeholder="reserved"></div><div><label>Import Maybelle JSON archive</label><input id="importFile" type="file" accept=".json,application/json"></div></div><div class="toolbar"><button id="loadLocalButton">Load Wiki</button><button id="importButton">Import Archive</button><button id="copyJsonButton">Copy Plain JSON</button><button id="emptyWikiButton" class="danger">Empty Maybelle Wiki</button></div><p class="muted">Server-side backups are change-only and live in /app/data/backups.</p></div></div><div class="wiki-box"><h2>JSON Preview</h2><div class="box-body"><button id="refreshPreviewButton">Refresh Preview</button><div id="jsonPreview" class="json-preview"></div></div></div></section>
-</div></main></div>
-<div id="confirmModal" class="modal-backdrop"><div class="modal-box"><h2 id="confirmModalTitle" class="modal-title">Confirm</h2><div id="confirmModalMessage" class="modal-message"></div><div class="modal-actions"><button id="confirmCancelButton">Cancel</button><button id="confirmOkButton" class="danger">Confirm</button></div></div></div>
-<div id="cyrillicKeyboard" class="keyboard-panel"><div class="keyboard-header"><div><strong>Cyrillic Root Keyboard</strong><div class="keyboard-hint">Click a key to insert it.</div></div><button id="closeKeyboardButton" class="small">Close</button></div><div id="keyboardRows" class="keyboard-rows"></div></div><button id="keyboardToggle" class="keyboard-toggle">▲ Cyrillic Keyboard</button>
-<script src="/main.js"></script><script src="/threads.js"></script></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Maybelle Wiki</title><link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="layout">
+<aside>
+<div class="brand"><h1>Maybelle</h1>
+<div>local wiki editor
+</div>
+</div>
+<div class="side-section">
+<div class="side-title">Wiki
+</div><button class="nav-button active" data-view="home">Main Page</button><button class="nav-button" data-view="roots">Root Glyphs</button><button class="nav-button" data-view="dictionary">Dictionary</button><button class="nav-button" data-view="grammar">Grammar Notes</button><button class="nav-button" data-view="threads">Threads</button><button class="nav-button" data-view="archive">Archive</button>
+</div>
+<div class="side-section">
+<div class="side-title">Recent Roots
+</div>
+<div id="quickRoots" class="quick-list">
+</div>
+</div>
+<div class="side-section">
+<div class="side-title">Recent Words
+</div>
+<div id="quickEntries" class="quick-list">
+</div>
+</div>
+</aside>
+<main>
+<div class="page">
+<div class="topbar">
+<div><h1 id="viewTitle" class="page-title">Main Page</h1>
+<div id="viewSubtitle" class="page-subtitle">A fluid local wiki for Maybelle.
+</div>
+</div>
+<div class="top-actions"><button id="saveLocalButton" class="primary">Save Wiki</button><button id="exportButton">Export Archive</button><button id="keyboardOpenTopButton">Keyboard</button>
+</div>
+</div>
+<div id="backendModeBanner" class="status">
+</div>
+<div id="status" class="status">
+</div>
+<section id="homeView" class="view">
+<div class="wiki-box"><h2>Overview</h2>
+<div class="box-body">
+<div class="stats">
+<div class="stat">
+<div id="rootCount" class="stat-number">0
+</div>
+<div class="stat-label">root glyphs
+</div>
+</div>
+<div class="stat">
+<div id="entryCount" class="stat-number">0
+</div>
+<div class="stat-label">dictionary words
+</div>
+</div>
+<div class="stat">
+<div id="fieldCount" class="stat-number">0
+</div>
+<div class="stat-label">custom fields
+</div>
+</div>
+</div>
+</div>
+</div>
+<div class="wiki-box"><h2>Quick Editing</h2>
+<div class="box-body">
+<div class="toolbar"><button id="homeAddRootButton">Add Root Glyph</button><button id="homeAddEntryButton">Add Word</button><button id="seedCanonHomeButton" class="primary">Seed Maybelle Canon</button><button data-view-jump="grammar">Open Grammar Notes</button>
+</div><p class="muted">Words are sorted by description. Categories have been removed. Compound entries show root breakdowns automatically.</p>
+</div>
+</div>
+<div class="wiki-box"><h2>Root Table Preview</h2>
+<div class="box-body">
+<table class="root-table">
+<thead>
+<tr><th>Glyph</th><th>Root Name</th><th>Description</th>
+</tr>
+</thead>
+<tbody id="rootTablePreview">
+</tbody>
+</table>
+</div>
+</div>
+</section>
+<section id="rootsView" class="view hidden">
+<div class="workspace">
+<div class="wiki-box"><h2>Root Index</h2>
+<div class="box-body">
+<div class="searchbar"><input id="rootSearch" placeholder="Search roots..."><button id="addRootButton">Add Root</button>
+</div>
+<div class="toolbar"><button id="seedCanonRootsButton" class="primary">Seed Maybelle Canon</button><label class="inline-check"><input id="unlockCanonRoots" type="checkbox"> Unlock canon root editing</label>
+</div>
+<div id="rootList" class="list-panel">
+</div>
+</div>
+</div>
+<div class="editor-card">
+<div class="editor-card-header"><strong id="rootEditorTitle">Root Editor</strong><button id="deleteRootButton" class="danger small">Delete Root</button>
+</div>
+<div class="editor-card-body">
+<div id="rootEmptyState" class="empty-state">Select a root or create a new one.
+</div>
+<div id="rootEditorFields" class="hidden">
+<div class="grid-3">
+<div class="field-group"><label>Glyph</label><input id="rootGlyphInput" class="glyph-input" maxlength="2" placeholder="Ж">
+</div>
+<div class="field-group"><label>Root name</label><input id="rootNameInput" placeholder="Person">
+</div>
+<div class="field-group"><label>Description</label><input id="rootDescriptionInput" placeholder="Individual intelligent being">
+</div>
+</div>
+<div id="rootCanonNotice" class="notice hidden">
+</div>
+<div class="field-group"><label>Notes</label><textarea id="rootNotesInput"></textarea>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="dictionaryView" class="view hidden">
+<div class="workspace">
+<div class="wiki-box"><h2>Word Index</h2>
+<div class="box-body">
+<div class="searchbar"><input id="entrySearch" placeholder="Search words..."><button id="addEntryButton">Add Word</button>
+</div>
+<div id="entryList" class="list-panel">
+</div>
+</div>
+</div>
+<div class="editor-card">
+<div class="editor-card-header"><strong id="entryEditorTitle">Word Editor</strong><button id="deleteEntryButton" class="danger small">Delete Word</button>
+</div>
+<div class="editor-card-body">
+<div id="entryEmptyState" class="empty-state">Select a word or create a new one.
+</div>
+<div id="entryEditorFields" class="hidden">
+<div class="grid-2">
+<div class="field-group"><label>Compound</label><input id="entryCompoundInput" class="compound-input" placeholder="ЖИ">
+</div>
+<div class="field-group"><label>Description</label><input id="entryDescriptionInput" placeholder="Hello / Hi">
+</div>
+</div>
+<div class="field-group"><label>Literal meaning</label><input id="entryLiteralInput" placeholder="Person + Relation">
+</div>
+<div class="field-group"><label>Notes</label><textarea id="entryNotesInput"></textarea>
+</div>
+<div class="extra-fields">
+<div class="toolbar"><strong>Extra Fields</strong><button id="addExtraFieldButton" class="small">Add Field</button>
+</div>
+<div id="entryExtraFields">
+</div>
+</div>
+<div id="entryValidation" class="wiki-box validation-box"><h2>Validation</h2>
+<div class="box-body">
+</div>
+</div>
+<div id="compoundBuilder" class="wiki-box"><h2>Compound Builder</h2>
+<div class="box-body">
+<div id="builderRoots" class="builder-roots">
+</div>
+</div>
+</div>
+<div id="entryBreakdown" class="wiki-box"><h2>Root Breakdown</h2>
+<div class="box-body">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="grammarView" class="view hidden">
+<div class="wiki-box"><h2>Grammar Notes</h2>
+<div class="box-body"><textarea id="grammarNotesInput" style="min-height:420px" placeholder="〰 = sentence-final question marker"></textarea>
+</div>
+</div>
+</section>
+<section id="threadsView" class="view hidden">
+<div class="wiki-box"><h2>Threads</h2>
+<div class="box-body"><p class="muted">Create named discussion threads and post persistent rich-text messages with optional images.</p>
+<div id="threadsDisabledNotice" class="empty-state hidden">Threads are disabled.
+</div>
+<div id="threadsStandaloneNotice" class="empty-state hidden">Threads require the Python host.
+</div>
+<div id="threadsMainPanel" class="threads-layout">
+<div>
+<div class="wiki-box"><h2>Create / Join</h2>
+<div class="box-body"><label>Username</label><input id="threadUsernameInput" maxlength="32"><label>Thread password</label><input id="threadPasswordInput" type="password"><label>New thread name</label><input id="threadNameInput" maxlength="80">
+<div class="toolbar"><button id="claimThreadUsernameButton" class="primary">Claim Username</button><button id="createThreadButton">Create Thread</button><button id="refreshThreadsButton">Refresh</button>
+</div>
+</div>
+</div><h3>Thread Index</h3>
+<div id="threadList" class="thread-list">
+</div>
+</div>
+<div>
+<div class="editor-card">
+<div class="editor-card-header"><strong id="selectedThreadTitle">No thread selected</strong>
+</div>
+<div class="editor-card-body">
+<div id="threadAdminControls" class="toolbar">
+</div>
+<div id="threadMessages" class="thread-messages">
+</div>
+<div class="rich-toolbar"><button data-rich-command="bold"><b>B</b></button><button data-rich-command="italic"><i>I</i></button><button data-rich-command="underline"><u>U</u></button><button data-rich-command="insertUnorderedList">List</button><button id="richLinkButton">Link</button><button data-rich-command="removeFormat">Clear</button>
+</div>
+<div id="threadRichEditor" class="rich-editor" contenteditable="true" data-placeholder="Write a rich-text message...">
+</div>
+<div class="thread-compose-actions">
+<div><label>Images</label><input id="threadImageInput" type="file" accept="image/*" multiple>
+</div><button id="sendThreadMessageButton" class="primary">Send Message</button>
+</div>
+<div id="threadImagePreview" class="thread-image-preview">
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</section>
+<section id="archiveView" class="view hidden">
+<div class="wiki-box"><h2>Archive</h2>
+<div class="box-body">
+<div class="grid-2">
+<div><label>Archive encryption key</label><input id="encryptionKey" type="password" placeholder="reserved">
+</div>
+<div><label>Import Maybelle JSON archive</label><input id="importFile" type="file" accept=".json,application/json">
+</div>
+</div>
+<div class="toolbar"><button id="loadLocalButton">Load Wiki</button><button id="importButton">Import Archive</button><button id="copyJsonButton">Copy Plain JSON</button><button id="seedCanonArchiveButton" class="primary">Seed Maybelle Canon</button><button id="forceBackupButton">Create Backup Now</button><button id="refreshBackupsButton">Refresh Backups</button><button id="emptyWikiButton" class="danger">Empty Maybelle Wiki</button>
+</div><p class="muted">Server-side backups are change-only and live in data/backups.</p>
+<div id="backupBrowser" class="backup-browser">
+</div>
+<div id="backupPreview" class="json-preview hidden">
+</div>
+</div>
+</div>
+<div class="wiki-box"><h2>JSON Preview</h2>
+<div class="box-body"><button id="refreshPreviewButton">Refresh Preview</button>
+<div id="jsonPreview" class="json-preview">
+</div>
+</div>
+</div>
+</section>
+</div>
+</main>
+</div>
+<div id="confirmModal" class="modal-backdrop">
+<div class="modal-box"><h2 id="confirmModalTitle" class="modal-title">Confirm</h2>
+<div id="confirmModalMessage" class="modal-message">
+</div>
+<div class="modal-actions"><button id="confirmCancelButton">Cancel</button><button id="confirmOkButton" class="danger">Confirm</button>
+</div>
+</div>
+</div>
+<div id="cyrillicKeyboard" class="keyboard-panel">
+<div class="keyboard-header">
+<div><strong>Cyrillic Root Keyboard</strong>
+<div class="keyboard-hint">Click a key to insert it.
+</div>
+</div><button id="closeKeyboardButton" class="small">Close</button>
+</div>
+<div id="keyboardRows" class="keyboard-rows">
+</div>
+</div><button id="keyboardToggle" class="keyboard-toggle">▲ Cyrillic Keyboard</button>
+<script src="/main.js"></script>
+<script src="/threads.js"></script>
+</body></html>
