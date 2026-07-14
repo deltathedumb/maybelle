@@ -1,5 +1,7 @@
 "use strict";
 <<<<<<< ours
+<<<<<<< ours
+<<<<<<< ours
 let threadUsernameToken=sessionStorage.getItem("maybelleThreadUsernameToken")||"", threadUsername=sessionStorage.getItem("maybelleThreadUsername")||"", selectedThreadId=sessionStorage.getItem("maybelleSelectedThreadId")||"", threadTimer=null, pendingThreadImages=[];
 function threadsBaseUrl(){return isBackendMode()?BACKEND_BASE_URL:""}
 async function threadsRequest(path,options={}){const base=threadsBaseUrl();if(!base)throw new Error("Threads require opening the editor through the Python host.");const r=await fetch(base+path,{cache:"no-store",...options});const d=await r.json().catch(()=>({}));if(!r.ok||d.ok===false)throw new Error(d.error||`HTTP ${r.status}`);return d}
@@ -25,6 +27,10 @@ function startThreadPolling(){clearInterval(threadTimer);threadTimer=setInterval
 function initThreads(){$("threadUsernameInput").value=threadUsername;$("claimThreadUsernameButton").onclick=()=>claimThreadUsername().catch(e=>setStatus(e.message,"error"));$("createThreadButton").onclick=createThread;$("refreshThreadsButton").onclick=()=>refreshThreadsStatus().catch(e=>setStatus(e.message,"error"));$("sendThreadMessageButton").onclick=sendThreadMessage;$("threadImageInput").onchange=handleThreadImages;document.querySelectorAll("[data-rich-command]").forEach(b=>b.onclick=()=>runRichCommand(b.dataset.richCommand));$("richLinkButton").onclick=addRichLink;$("threadAdminControls").innerHTML='<button id="renameThreadButton">Rename Thread</button><button id="deleteThreadButton" class="danger">Delete Thread</button>';$("renameThreadButton").onclick=()=>renameSelectedThread().catch(e=>setStatus(e.message,"error"));$("deleteThreadButton").onclick=()=>deleteSelectedThread().catch(e=>setStatus(e.message,"error"));startThreadPolling()}
 window.refreshThreadsStatus=refreshThreadsStatus;window.initThreads=initThreads;
 =======
+=======
+>>>>>>> theirs
+=======
+>>>>>>> theirs
 let threadUsernameToken =
     sessionStorage.getItem("maybelleThreadUsernameToken") || "",
   threadUsername = sessionStorage.getItem("maybelleThreadUsername") || "",
@@ -362,4 +368,10 @@ function initThreads() {
 }
 window.refreshThreadsStatus = refreshThreadsStatus;
 window.initThreads = initThreads;
+<<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
+>>>>>>> theirs
+=======
 >>>>>>> theirs
