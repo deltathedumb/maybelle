@@ -696,8 +696,10 @@ def make_handler(app: App):
                     self.require_read_pass()
                     return self.json(app.read_wiki())
                 if p in ("/api/threads/status", "/api/threads/status/"):
+                    self.require_read_pass()
                     return self.json({"ok": True, "threads": app.threads.status()})
                 if p in ("/api/threads", "/api/threads/"):
+                    self.require_read_pass()
                     return self.json(app.threads.list())
                 if p in ("/api/admin/backups", "/api/admin/backups/"):
                     self.require_read_pass()
@@ -746,14 +748,18 @@ def make_handler(app: App):
                     app.admin(d.get("admin_pass"))
                     return self.json(app.tracker.read_backup(d.get("name")))
                 if p in ("/api/threads/claim", "/api/threads/claim/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.claim(d.get("username"), d.get("password"))
                     )
                 if p in ("/api/threads/create", "/api/threads/create/"):
+                    self.require_write_pass()
                     return self.json(app.threads.create(d.get("token"), d.get("name")))
                 if p in ("/api/threads/thread", "/api/threads/thread/"):
+                    self.require_read_pass()
                     return self.json(app.threads.get(d.get("thread_id")))
                 if p in ("/api/threads/message", "/api/threads/message/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.message(
                             d.get("token"),
@@ -763,22 +769,26 @@ def make_handler(app: App):
                         )
                     )
                 if p in ("/api/threads/rename", "/api/threads/rename/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.rename(
                             d.get("thread_id"), d.get("name"), d.get("admin_pass")
                         )
                     )
                 if p in ("/api/threads/delete", "/api/threads/delete/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.delete(d.get("thread_id"), d.get("admin_pass"))
                     )
                 if p in ("/api/threads/message/delete", "/api/threads/message/delete/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.delete_msg(
                             d.get("thread_id"), d.get("message_id"), d.get("admin_pass")
                         )
                     )
                 if p in ("/api/threads/message/edit", "/api/threads/message/edit/"):
+                    self.require_write_pass()
                     return self.json(
                         app.threads.edit_msg(
                             d.get("thread_id"),
