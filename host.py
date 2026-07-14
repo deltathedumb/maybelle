@@ -73,8 +73,6 @@ def repair_ids(items, prefix):
         seen.add(x["id"])
     return items
 
-<<<<<<< ours
-
 def normalize_wiki(raw: Any):
     if not isinstance(raw, dict):
         raise ValueError("Wiki JSON root must be an object")
@@ -88,6 +86,7 @@ def normalize_wiki(raw: Any):
                 "root_name": str(r.get("root_name") or r.get("rootName") or ""),
                 "description": str(r.get("description") or ""),
                 "notes": str(r.get("notes") or ""),
+                "canon": bool(r.get("canon")),
             })
 
     dictionary = []
@@ -106,6 +105,7 @@ def normalize_wiki(raw: Any):
                 ),
                 "notes": str(e.get("notes") or ""),
                 "fields": fields,
+                "canon": bool(e.get("canon")),
             })
     dictionary.sort(
         key=lambda x: (
@@ -140,28 +140,6 @@ def diff_items(old, new, label):
     for k, v in om.items():
         if k not in nm:
             out.append({"type": label + ".removed", "id": k, "before": v})
-=======
-def normalize_wiki(raw:Any):
-    if not isinstance(raw,dict): raise ValueError('Wiki JSON root must be an object')
-    roots=[]
-    for i,r in enumerate(raw.get('roots') if isinstance(raw.get('roots'),list) else []):
-        if isinstance(r,dict): roots.append({'id':stable_id('root',r,i),'glyph':str(r.get('glyph') or ''),'root_name':str(r.get('root_name') or r.get('rootName') or ''),'description':str(r.get('description') or ''),'notes':str(r.get('notes') or ''),'canon':bool(r.get('canon'))})
-    dictionary=[]; entries=raw.get('dictionary',raw.get('entries',[]))
-    for i,e in enumerate(entries if isinstance(entries,list) else []):
-        if isinstance(e,dict):
-            fields=e.get('fields',{}) if isinstance(e.get('fields',{}),dict) else {}
-            dictionary.append({'id':stable_id('entry',e,i),'compound':str(e.get('compound') or e.get('word') or ''),'description':str(e.get('description') or e.get('meaning') or ''),'literal_meaning':str(e.get('literal_meaning') or e.get('literalMeaning') or ''),'notes':str(e.get('notes') or ''),'fields':fields,'canon':bool(e.get('canon'))})
-    dictionary.sort(key=lambda x:((x.get('description') or '').casefold(),(x.get('compound') or '').casefold()))
-    return {'schema_version':CURRENT_SCHEMA_VERSION,'imported_from_schema_version':raw.get('schema_version',1),'updated_at':raw.get('updated_at') or now(),'roots':repair_ids(roots,'root'),'dictionary':repair_ids(dictionary,'entry'),'grammar_notes':str(raw.get('grammar_notes') or raw.get('grammarNotes') or '')}
-
-def diff_items(old,new,label):
-    out=[]; om={x.get('id'):x for x in old if x.get('id')}; nm={x.get('id'):x for x in new if x.get('id')}
-    for k,v in nm.items():
-        if k not in om: out.append({'type':label+'.added','id':k,'after':v})
-        elif om[k]!=v: out.append({'type':label+'.updated','id':k,'before':om[k],'after':v})
-    for k,v in om.items():
-        if k not in nm: out.append({'type':label+'.removed','id':k,'before':v})
->>>>>>> theirs
     return out
 
 
@@ -255,51 +233,46 @@ class Tracker:
 
     def force(self):
         with self.lock:
-<<<<<<< ours
             p = self.backup_locked(int(self.state.get("push_count", 0)))
             write_json(self.state_path, self.state)
             return p
-
-=======
-            p=self.backup_locked(int(self.state.get('push_count',0))); write_json(self.state_path,self.state); return p
     def list_backups(self):
         self.backups.mkdir(parents=True, exist_ok=True)
-        files=[]
-        for path in sorted(self.backups.glob('changes_*.json'), reverse=True):
+        files = []
+        for path in sorted(self.backups.glob("changes_*.json"), reverse=True):
             try:
-                data=read_json(path,{})
+                data = read_json(path, {})
             except Exception:
-                data={}
-            files.append({'name':path.name,'path':str(path.resolve()),'created_at':data.get('created_at',''),'from_push':data.get('from_push'),'to_push':data.get('to_push'),'change_count':data.get('change_count',0),'size':path.stat().st_size})
-        pending=0
+                data = {}
+            files.append({
+                "name": path.name,
+                "path": str(path.resolve()),
+                "created_at": data.get("created_at", ""),
+                "from_push": data.get("from_push"),
+                "to_push": data.get("to_push"),
+                "change_count": data.get("change_count", 0),
+                "size": path.stat().st_size,
+            })
+        pending = 0
         if self.pending.exists():
-            pending=sum(1 for line in self.pending.read_text(encoding='utf-8').splitlines() if line.strip())
-        return {'ok':True,'state':self.state,'pending_pushes':pending,'backups':files}
-    def read_backup(self,name):
-        safe=Path(str(name or '')).name
-        path=self.backups/safe
+            pending = sum(
+                1
+                for line in self.pending.read_text(encoding="utf-8").splitlines()
+                if line.strip()
+            )
+        return {
+            "ok": True,
+            "state": self.state,
+            "pending_pushes": pending,
+            "backups": files,
+        }
+
+    def read_backup(self, name):
+        safe = Path(str(name or "")).name
+        path = self.backups / safe
         if not safe or not path.exists() or not path.is_file():
-            raise ValueError('Backup not found')
-        return {'ok':True,'name':safe,'backup':read_json(path,{})}
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
+            raise ValueError("Backup not found")
+        return {"ok": True, "name": safe, "backup": read_json(path, {})}
 
 def safe_html(s):
     s = str(s or "")[:12000]
@@ -550,7 +523,6 @@ class Threads:
         self.check()
         self.admin(admin_pass)
         with self.lock:
-<<<<<<< ours
             for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
                 if t["id"] == str(thread_id or ""):
                     for i, m in enumerate(t.get("messages", [])):
@@ -575,43 +547,40 @@ class Threads:
                                 "threads": self.summaries(),
                             }
         raise ValueError("Message not found")
-
-=======
-            for t in self.data.get('threads',[]):
-                if t['id']==str(thread_id or ''):
-                    for i,m in enumerate(t.get('messages',[])):
-                        if m['id']==str(message_id or ''):
-                            old=t['messages'].pop(i); t['updated_at']=now(); self.save(); self.tracker.push('threads',[{'type':'thread.message.removed','thread_id':t['id'],'before':old}],'admin'); return {'ok':True,'thread':t,'threads':self.summaries()}
-        raise ValueError('Message not found')
-    def edit_msg(self,thread_id,message_id,html_value,admin_pass):
-        self.check(); self.admin(admin_pass); body=safe_html(html_value)
-        if not body.strip(): raise ValueError('Message is empty')
+    def edit_msg(self, thread_id, message_id, html_value, admin_pass):
+        self.check()
+        self.admin(admin_pass)
+        body = safe_html(html_value)
+        if not body.strip():
+            raise ValueError("Message is empty")
         with self.lock:
-            for t in self.data.get('threads',[]):
-                if t['id']==str(thread_id or ''):
-                    for m in t.get('messages',[]):
-                        if m['id']==str(message_id or ''):
-                            old=dict(m); m['html']=body; m['edited_at']=now(); t['updated_at']=now(); self.save(); self.tracker.push('threads',[{'type':'thread.message.edited','thread_id':t['id'],'before':old,'after':m}],'admin'); return {'ok':True,'thread':t,'threads':self.summaries()}
-        raise ValueError('Message not found')
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
-<<<<<<< ours
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
-=======
->>>>>>> theirs
+            for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
+                if t["id"] == str(thread_id or ""):
+                    for m in t.get("messages", []):
+                        if m["id"] == str(message_id or ""):
+                            old = dict(m)
+                            m["html"] = body
+                            m["edited_at"] = now()
+                            t["updated_at"] = now()
+                            self.save()
+                            self.tracker.push(
+                                "threads",
+                                [
+                                    {
+                                        "type": "thread.message.edited",
+                                        "thread_id": t["id"],
+                                        "before": old,
+                                        "after": m,
+                                    }
+                                ],
+                                "admin",
+                            )
+                            return {
+                                "ok": True,
+                                "thread": t,
+                                "threads": self.summaries(),
+                            }
+        raise ValueError("Message not found")
 
 class App:
     def __init__(self, args):
@@ -694,23 +663,26 @@ def make_handler(app: App):
         def do_GET(self):
             p = urlparse(self.path).path
             try:
-<<<<<<< ours
                 if p in ("/api/status", "/api/status/"):
-                    return self.json({
-                        "ok": True,
-                        "name": APP_NAME,
-                        "schema": f"v{CURRENT_SCHEMA_VERSION}",
-                        "wiki_path": str(app.wiki_path.resolve()),
-                        "editor_root": str(app.editor_root.resolve()),
-                        "threads": app.threads.status(),
-                        "admin_password_enabled": bool(app.admin_pass),
-                    })
+                    return self.json(
+                        {
+                            "ok": True,
+                            "name": APP_NAME,
+                            "schema": f"v{CURRENT_SCHEMA_VERSION}",
+                            "wiki_path": str(app.wiki_path.resolve()),
+                            "editor_root": str(app.editor_root.resolve()),
+                            "threads": app.threads.status(),
+                            "admin_password_enabled": bool(app.admin_pass),
+                        }
+                    )
                 if p in ("/api/wiki", "/api/wiki/"):
                     return self.json(app.read_wiki())
                 if p in ("/api/threads/status", "/api/threads/status/"):
                     return self.json({"ok": True, "threads": app.threads.status()})
                 if p in ("/api/threads", "/api/threads/"):
                     return self.json(app.threads.list())
+                if p in ("/api/admin/backups", "/api/admin/backups/"):
+                    return self.json(app.tracker.list_backups())
                 if p in ("/", "/index.html", "/page.html"):
                     return self.file(app.editor_root / "page.html")
 
@@ -725,42 +697,32 @@ def make_handler(app: App):
                 return self.json({"ok": False, "error": str(e)}, 403)
             except Exception as e:
                 return self.json({"ok": False, "error": str(e)}, 500)
-
-=======
-                if p in ('/api/status','/api/status/'): return self.json({'ok':True,'name':APP_NAME,'schema':f'v{CURRENT_SCHEMA_VERSION}','wiki_path':str(app.wiki_path.resolve()),'editor_root':str(app.editor_root.resolve()),'threads':app.threads.status(),'admin_password_enabled':bool(app.admin_pass)})
-                if p in ('/api/wiki','/api/wiki/'): return self.json(app.read_wiki())
-                if p in ('/api/threads/status','/api/threads/status/'): return self.json({'ok':True,'threads':app.threads.status()})
-                if p in ('/api/threads','/api/threads/'): return self.json(app.threads.list())
-                if p in ('/api/admin/backups','/api/admin/backups/'): return self.json(app.tracker.list_backups())
-                if p in ('/','/index.html','/page.html'): return self.file(app.editor_root/'page.html')
-                safe=Path(p.lstrip('/'))
-                if safe.is_absolute() or '..' in safe.parts: return self.text('Forbidden',403)
-                cand=app.editor_root/safe
-                if cand.exists() and cand.is_file(): return self.file(cand)
-                return self.text('Not found',404)
-            except PermissionError as e: return self.json({'ok':False,'error':str(e)},403)
-            except Exception as e: return self.json({'ok':False,'error':str(e)},500)
->>>>>>> theirs
         def do_POST(self):
             p = urlparse(self.path).path
             try:
-<<<<<<< ours
                 d = self.body()
                 if p in ("/api/wiki", "/api/wiki/"):
-                    return self.json({
-                        "ok": True,
-                        "path": str(app.wiki_path.resolve()),
-                        **{
-                            k: app.write_wiki(d)[k]
-                            for k in ("schema_version", "updated_at")
-                        },
-                    })
+                    return self.json(
+                        {
+                            "ok": True,
+                            "path": str(app.wiki_path.resolve()),
+                            **{
+                                k: app.write_wiki(d)[k]
+                                for k in ("schema_version", "updated_at")
+                            },
+                        }
+                    )
                 if p in ("/api/admin/backup", "/api/admin/backup/"):
                     app.admin(d.get("admin_pass"))
-                    return self.json({
-                        "ok": True,
-                        "backup_path": str(app.tracker.force().resolve()),
-                    })
+                    return self.json(
+                        {
+                            "ok": True,
+                            "backup_path": str(app.tracker.force().resolve()),
+                        }
+                    )
+                if p in ("/api/admin/backup/read", "/api/admin/backup/read/"):
+                    app.admin(d.get("admin_pass"))
+                    return self.json(app.tracker.read_backup(d.get("name")))
                 if p in ("/api/threads/claim", "/api/threads/claim/"):
                     return self.json(
                         app.threads.claim(d.get("username"), d.get("password"))
@@ -794,6 +756,15 @@ def make_handler(app: App):
                             d.get("thread_id"), d.get("message_id"), d.get("admin_pass")
                         )
                     )
+                if p in ("/api/threads/message/edit", "/api/threads/message/edit/"):
+                    return self.json(
+                        app.threads.edit_msg(
+                            d.get("thread_id"),
+                            d.get("message_id"),
+                            d.get("html"),
+                            d.get("admin_pass"),
+                        )
+                    )
                 return self.text("Not found", 404)
             except PermissionError as e:
                 return self.json({"ok": False, "error": str(e)}, 403)
@@ -813,26 +784,6 @@ def make_handler(app: App):
             self.end_headers()
             self.wfile.write(b)
 
-=======
-                d=self.body()
-                if p in ('/api/wiki','/api/wiki/'): return self.json({'ok':True,'path':str(app.wiki_path.resolve()),**{k:app.write_wiki(d)[k] for k in ('schema_version','updated_at')}})
-                if p in ('/api/admin/backup','/api/admin/backup/'): app.admin(d.get('admin_pass')); return self.json({'ok':True,'backup_path':str(app.tracker.force().resolve())})
-                if p in ('/api/threads/claim','/api/threads/claim/'): return self.json(app.threads.claim(d.get('username'),d.get('password')))
-                if p in ('/api/threads/create','/api/threads/create/'): return self.json(app.threads.create(d.get('token'),d.get('name')))
-                if p in ('/api/threads/thread','/api/threads/thread/'): return self.json(app.threads.get(d.get('thread_id')))
-                if p in ('/api/admin/backup/read','/api/admin/backup/read/'): app.admin(d.get('admin_pass')); return self.json(app.tracker.read_backup(d.get('name')))
-                if p in ('/api/threads/message','/api/threads/message/'): return self.json(app.threads.message(d.get('token'),d.get('thread_id'),d.get('html'),d.get('images')))
-                if p in ('/api/threads/rename','/api/threads/rename/'): return self.json(app.threads.rename(d.get('thread_id'),d.get('name'),d.get('admin_pass')))
-                if p in ('/api/threads/delete','/api/threads/delete/'): return self.json(app.threads.delete(d.get('thread_id'),d.get('admin_pass')))
-                if p in ('/api/threads/message/delete','/api/threads/message/delete/'): return self.json(app.threads.delete_msg(d.get('thread_id'),d.get('message_id'),d.get('admin_pass')))
-                if p in ('/api/threads/message/edit','/api/threads/message/edit/'): return self.json(app.threads.edit_msg(d.get('thread_id'),d.get('message_id'),d.get('html'),d.get('admin_pass')))
-                return self.text('Not found',404)
-            except PermissionError as e: return self.json({'ok':False,'error':str(e)},403)
-            except Exception as e: return self.json({'ok':False,'error':str(e)},400)
-        def file(self,path):
-            if not path.exists(): return self.text('File not found',404)
-            b=path.read_bytes(); self.send_response(200); self.send_header('Content-Type',mimetypes.guess_type(str(path))[0] or 'application/octet-stream'); self.send_header('Content-Length',str(len(b))); self.end_headers(); self.wfile.write(b)
->>>>>>> theirs
     return H
 
 
