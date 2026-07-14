@@ -282,6 +282,9 @@ class Tracker:
             raise ValueError('Backup not found')
         return {'ok':True,'name':safe,'backup':read_json(path,{})}
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
@@ -579,6 +582,9 @@ class Threads:
                             old=dict(m); m['html']=body; m['edited_at']=now(); t['updated_at']=now(); self.save(); self.tracker.push('threads',[{'type':'thread.message.edited','thread_id':t['id'],'before':old,'after':m}],'admin'); return {'ok':True,'thread':t,'threads':self.summaries()}
         raise ValueError('Message not found')
 <<<<<<< ours
+<<<<<<< ours
+>>>>>>> theirs
+=======
 >>>>>>> theirs
 =======
 >>>>>>> theirs
