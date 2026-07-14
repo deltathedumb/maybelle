@@ -9,3 +9,5 @@ venv/
 Thumbs.db
 .vscode/
 .idea/
+
+local.gitignore # local gitignore file
