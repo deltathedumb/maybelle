@@ -17,6 +17,7 @@ let appData = createEmptyData(),
   activeTextField = null;
 let wikiAuth = loadWikiAuth();
 let archiveAuth = loadArchiveAuth();
+let authAlertShown = false;
 const CANON_ROOTS = [
   ["А", "Existence", "Being, presence, reality"],
   ["Б", "Becoming", "Change, emergence, transformation"],
@@ -171,24 +172,6 @@ function wikiAuthHeaders(mode) {
   }
   return headers;
 }
-async function promptForWikiPass(mode) {
-  const label = mode === "read" ? "read" : "write";
-  const current =
-    mode === "read"
-      ? wikiAuth.readPass || ""
-      : wikiAuth.writePass || wikiAuth.readPass || "";
-  const pass =
-    prompt(`Wiki ${label} password (leave blank to cancel):`, current) || "";
-  if (!pass) return "";
-  if (mode === "read") {
-    wikiAuth.readPass = pass;
-    if (!wikiAuth.writePass) wikiAuth.writePass = pass;
-  } else {
-    wikiAuth.writePass = pass;
-  }
-  saveWikiAuth();
-  return pass;
-}
 async function backendRequest(path, options = {}, mode = "read", retry = true) {
   const r = await fetch(`${BACKEND_BASE_URL}${path}`, {
     cache: "no-store",
@@ -199,11 +182,17 @@ async function backendRequest(path, options = {}, mode = "read", retry = true) {
     },
   });
   const d = await r.json().catch(() => ({}));
-  const authError =
-    typeof d.error === "string" && d.error.startsWith("Wiki ");
-  if ((r.status === 401 || r.status === 403) && BACKEND_MODE && retry && authError) {
-    const pass = await promptForWikiPass(mode);
-    if (pass) return backendRequest(path, options, mode, false);
+  if (
+    (r.status === 401 || r.status === 403) &&
+    BACKEND_MODE &&
+    !authAlertShown
+  ) {
+    authAlertShown = true;
+    await showAlert({
+      title: "Password Incorrect",
+      message: d.error || "Password is incorrect.",
+      confirmText: "OK",
+    });
   }
   if (!r.ok || d.ok === false)
     throw new Error(d.error || `Backend returned HTTP ${r.status}`);
@@ -1165,6 +1154,11 @@ async function loadArchiveFile(file) {
     );
   } catch (e) {
     if (parsed.format === "maybelle-encrypted-archive") {
+      await showAlert({
+        title: "Password Incorrect",
+        message: "Archive password is incorrect.",
+        confirmText: "OK",
+      });
       throw new Error("Archive password is incorrect or the file is corrupted.");
     }
     throw e;
@@ -1182,6 +1176,7 @@ function saveServerPasswords() {
   wikiAuth.adminPass = $("serverAdminPasswordInput")?.value || "";
   if (wikiAuth.readPass && !wikiAuth.writePass) wikiAuth.writePass = wikiAuth.readPass;
   saveWikiAuth();
+  authAlertShown = false;
   syncServerInputs();
 }
 async function enterServerPassword() {
@@ -1197,7 +1192,7 @@ async function pushToServer() {
   await saveLocal();
 }
 function currentAdminPass() {
-  return wikiAuth.adminPass || prompt("Admin password (leave blank if disabled):") || "";
+  return wikiAuth.adminPass || "";
 }
 async function emptyWiki() {
   if (
@@ -1238,6 +1233,7 @@ function showConfirm(o = {}) {
   msg.textContent = o.message || "Are you sure?";
   ok.textContent = o.confirmText || "Confirm";
   ok.classList.toggle("danger", o.danger !== false);
+  cancel.classList.toggle("hidden", o.showCancel === false);
   m.classList.add("open");
   return new Promise((res) => {
     function close(v) {
@@ -1250,6 +1246,14 @@ function showConfirm(o = {}) {
     m.onclick = (e) => {
       if (e.target === m) close(false);
     };
+  });
+}
+function showAlert(o = {}) {
+  return showConfirm({
+    ...o,
+    showCancel: false,
+    confirmText: o.confirmText || "OK",
+    danger: false,
   });
 }
 function buildKeyboard() {
@@ -1489,6 +1493,15 @@ function bindEvents() {
     pushToServer().catch((e) => setStatus(e.message, "error"));
   $("serverEnterAdminButton").onclick = () =>
     enterServerPassword().catch((e) => setStatus(e.message, "error"));
+  [
+    "serverPullPasswordInput",
+    "serverPushPasswordInput",
+    "serverAdminPasswordInput",
+  ].forEach((id) =>
+    $(id).addEventListener("input", () => {
+      saveServerPasswords();
+    }),
+  );
   [
     "seedCanonHomeButton",
     "seedCanonRootsButton",
