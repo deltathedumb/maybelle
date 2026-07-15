@@ -155,6 +155,9 @@ aside {
   text-align: left;
   color: var(--text);
 }
+#quickEntries .quick-link {
+  grid-template-columns: 46px minmax(0, 1fr);
+}
 .quick-link:hover {
   background: #fff;
 }
@@ -162,6 +165,10 @@ aside {
   font-size: 18px;
   text-align: center;
   line-height: 1.1;
+}
+#quickEntries .quick-glyph {
+  font-size: 16px;
+  white-space: nowrap;
 }
 .quick-name {
   min-width: 0;
