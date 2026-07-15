@@ -147,8 +147,8 @@ aside {
 .quick-link {
   width: 100%;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr);
-  gap: 5px;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
   border: 0;
   background: transparent;
   padding: 3px 4px;
@@ -161,6 +161,7 @@ aside {
 .quick-glyph {
   font-size: 18px;
   text-align: center;
+  line-height: 1.1;
 }
 .quick-name {
   min-width: 0;
@@ -269,33 +270,39 @@ main {
 }
 .list-row {
   display: grid;
-  grid-template-columns: minmax(76px, 120px) minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 54px minmax(0, 1fr);
+  gap: 10px;
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--border-light);
   background: transparent;
   text-align: left;
-  padding: 8px;
+  padding: 10px 10px 8px;
 }
 .list-row:hover,
 .list-row.active {
   background: var(--blue-soft);
 }
 .list-glyph {
+  width: 54px;
   font-size: 22px;
-  text-align: left;
-  align-self: center;
+  text-align: center;
+  align-self: start;
   overflow-wrap: anywhere;
   line-height: 1.1;
+}
+.list-row > span:last-child {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 .list-title {
   font:
     bold 13px Arial,
     sans-serif;
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .list-subtitle {
   font:
@@ -303,8 +310,8 @@ main {
     sans-serif;
   color: var(--muted);
   overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .editor-card {
   border: 1px solid var(--border);
