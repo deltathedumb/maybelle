@@ -630,7 +630,7 @@ function renderRootList() {
   roots.forEach((r) => {
     const b = document.createElement("button");
     b.className = "list-row" + (r.id === selectedRootId ? " active" : "");
-    b.innerHTML = `<span class="list-glyph">${escapeHtml(r.glyph || "·")}</span><span><span class="list-title">${escapeHtml(r.root_name || "Unnamed root")}</span><span class="list-subtitle">${escapeHtml(r.description || "No description")}</span></span>`;
+    b.innerHTML = `<span class="list-glyph">${escapeHtml(r.glyph || "·")}</span><span class="list-text"><span class="list-title">${escapeHtml(r.root_name || "Unnamed root")}</span><span class="list-subtitle">${escapeHtml(r.description || "No description")}</span></span>`;
     b.onclick = () => {
       syncEditorsToData();
       selectedRootId = r.id;
@@ -664,7 +664,7 @@ function renderEntryList() {
   entries.forEach((e) => {
     const b = document.createElement("button");
     b.className = "list-row" + (e.id === selectedEntryId ? " active" : "");
-    b.innerHTML = `<span class="list-glyph">${escapeHtml(e.compound || "·")}</span><span><span class="list-title">${escapeHtml(e.description || "Unnamed word")}</span><span class="list-subtitle">${escapeHtml(e.literal_meaning || "No details")}</span></span>`;
+    b.innerHTML = `<span class="list-glyph">${escapeHtml(e.compound || "·")}</span><span class="list-text"><span class="list-title">${escapeHtml(e.description || "Unnamed word")}</span><span class="list-subtitle">${escapeHtml(e.literal_meaning || "No details")}</span></span>`;
     b.onclick = () => {
       syncEditorsToData();
       selectedEntryId = e.id;
