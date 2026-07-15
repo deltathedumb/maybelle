@@ -483,6 +483,44 @@ main {
   overflow: auto;
   padding: 8px;
 }
+.thread-access-panel {
+  border: 1px solid var(--border-light);
+  background: #fff;
+  margin: 0 0 14px;
+  padding: 10px;
+}
+.thread-access-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.thread-access-header strong {
+  font:
+    bold 14px Arial,
+    sans-serif;
+}
+.thread-access-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+.thread-access-list {
+  min-height: 120px;
+  font:
+    13px Arial,
+    sans-serif;
+  resize: vertical;
+}
+.thread-access-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 10px;
+}
+.thread-access-note {
+  margin-top: 8px;
+}
 .thread-message {
   border-bottom: 1px solid var(--border-light);
   padding: 8px 4px;
@@ -704,6 +742,7 @@ main {
   .searchbar,
   .stats,
   .threads-layout,
+  .thread-access-grid,
   .server-password-grid {
     grid-template-columns: 1fr;
   }

@@ -465,6 +465,7 @@ class Threads:
             self.data.get("threads"), list
         ):
             self.data = {"schema_version": 1, "updated_at": now(), "threads": []}
+        self.normalize()
 
     def check(self):
         if not self.enabled:
@@ -474,9 +475,84 @@ class Threads:
         if self.admin_pass and pw != self.admin_pass:
             raise PermissionError("Admin password is incorrect")
 
+    def admin_authorized(self, pw):
+        return bool(self.admin_pass) and str(pw or "") == self.admin_pass
+
     def save(self):
         self.data["updated_at"] = now()
         write_json(self.path, self.data)
+
+    def normalize_thread(self, thread):
+        if not isinstance(thread, dict):
+            thread = {}
+        thread.setdefault("messages", [])
+        if not isinstance(thread.get("messages"), list):
+            thread["messages"] = []
+        thread["whitelist_enabled"] = bool(
+            thread.get("whitelist_enabled") or thread.get("whitelistEnabled")
+        )
+        thread["whitelist"] = dedupe_strings(
+            thread.get("whitelist") or thread.get("whitelistUsers") or []
+        )
+        thread["blacklist"] = dedupe_strings(
+            thread.get("blacklist") or thread.get("blacklistUsers") or []
+        )
+        thread["id"] = str(thread.get("id") or secrets.token_urlsafe(12))
+        thread["name"] = str(thread.get("name") or "")
+        thread["created_by"] = str(
+            thread.get("created_by") or thread.get("createdBy") or "Unknown"
+        )
+        thread["created_at"] = str(
+            thread.get("created_at") or thread.get("createdAt") or now()
+        )
+        thread["updated_at"] = str(
+            thread.get("updated_at") or thread.get("updatedAt") or now()
+        )
+        return thread
+
+    def normalize(self):
+        self.data.setdefault("threads", [])
+        self.data["threads"] = [
+            self.normalize_thread(t)
+            for t in self.data.get("threads", [])
+            if isinstance(t, dict)
+        ]
+        return self.data
+
+    def find_thread(self, thread_id):
+        for t in self.data.get("threads", []):
+            if t["id"] == str(thread_id or ""):
+                return t
+        return None
+
+    def username_for_token(self, token):
+        if not token:
+            return None
+        u = self.users.get(str(token or ""))
+        if not u:
+            return None
+        u["last_seen"] = now()
+        return u["username"]
+
+    def thread_allows_user(self, thread, username, admin=False):
+        if admin:
+            return True
+        user = str(username or "").strip()
+        if not user:
+            return not thread.get("whitelist_enabled")
+        user_key = user.casefold()
+        creator_key = str(thread.get("created_by") or "").strip().casefold()
+        if creator_key and user_key == creator_key:
+            return True
+        whitelist = {u.casefold() for u in thread.get("whitelist", [])}
+        blacklist = {u.casefold() for u in thread.get("blacklist", [])}
+        if thread.get("whitelist_enabled"):
+            return user_key in whitelist
+        return user_key not in blacklist
+
+    def assert_thread_access(self, thread, username, admin=False):
+        if not self.thread_allows_user(thread, username, admin=admin):
+            raise PermissionError("You are not allowed to access this thread")
 
     def status(self):
         return {
@@ -512,7 +588,12 @@ class Threads:
         u["last_seen"] = now()
         return u
 
-    def summaries(self):
+    def summaries(self, username=None, admin=False):
+        threads = [
+            t
+            for t in self.data.get("threads", [])
+            if self.thread_allows_user(t, username, admin=admin)
+        ]
         return sorted(
             [
                 {
@@ -523,15 +604,21 @@ class Threads:
                     "updated_at": t.get("updated_at", ""),
                     "message_count": len(t.get("messages", [])),
                 }
-                for t in self.data.get("threads", [])  # ty:ignore[not-iterable]
+                for t in threads
             ],
             key=lambda x: x.get("updated_at", ""),
             reverse=True,
         )
 
-    def list(self):
+    def list(self, token=None, admin_pass=None):
         self.check()
-        return {"ok": True, "threads": self.summaries()}
+        return {
+            "ok": True,
+            "threads": self.summaries(
+                self.username_for_token(token),
+                admin=self.admin_authorized(admin_pass),
+            ),
+        }
 
     def create(self, token, name):
         self.check()
@@ -547,6 +634,9 @@ class Threads:
                 "created_at": now(),
                 "updated_at": now(),
                 "messages": [],
+                "whitelist_enabled": False,
+                "whitelist": [],
+                "blacklist": [],
             }
             self.data.setdefault("threads", []).append(t)  # ty:ignore[unresolved-attribute]
             self.save()
@@ -555,14 +645,17 @@ class Threads:
             )
             return {"ok": True, "thread": t, "threads": self.summaries()}
 
-    def get(self, thread_id):
+    def get(self, thread_id, token=None, admin_pass=None):
         self.check()
+        username = self.username_for_token(token)
+        admin = self.admin_authorized(admin_pass)
         for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
             if t["id"] == str(thread_id or ""):
+                self.assert_thread_access(t, username, admin=admin)
                 return {"ok": True, "thread": t}
         raise ValueError("Thread not found")
 
-    def message(self, token, thread_id, html_value, images):
+    def message(self, token, thread_id, html_value, images, admin_pass=None):
         self.check()
         body = safe_html(html_value)
         imgs = []
@@ -582,8 +675,10 @@ class Threads:
             raise ValueError("Message is empty")
         with self.lock:
             u = self.user(token)
+            admin = self.admin_authorized(admin_pass)
             for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
                 if t["id"] == str(thread_id or ""):
+                    self.assert_thread_access(t, u["username"], admin=admin)
                     m = {
                         "id": secrets.token_urlsafe(12),
                         "username": u["username"],
@@ -610,9 +705,30 @@ class Threads:
                         "ok": True,
                         "message": m,
                         "thread": t,
-                        "threads": self.summaries(),
+                        "threads": self.summaries(u["username"], admin=admin),
                     }
         raise ValueError("Thread not found")
+
+    def set_access(self, thread_id, admin_pass, whitelist_enabled, whitelist, blacklist):
+        self.check()
+        self.admin(admin_pass)
+        with self.lock:
+            admin = self.admin_authorized(admin_pass)
+            thread = self.find_thread(thread_id)
+            if not thread:
+                raise ValueError("Thread not found")
+            before = dict(thread)
+            thread["whitelist_enabled"] = bool(whitelist_enabled)
+            thread["whitelist"] = dedupe_strings(whitelist)
+            thread["blacklist"] = dedupe_strings(blacklist)
+            thread["updated_at"] = now()
+            self.save()
+            self.tracker.push(
+                "threads",
+                [{"type": "thread.access.updated", "before": before, "after": thread}],
+                "admin",
+            )
+            return {"ok": True, "thread": thread, "threads": self.summaries(admin=admin)}
 
     def rename(self, thread_id, name, admin_pass):
         self.check()
@@ -621,6 +737,7 @@ class Threads:
         if not name:
             raise ValueError("Thread name is required")
         with self.lock:
+            admin = self.admin_authorized(admin_pass)
             for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
                 if t["id"] == str(thread_id or ""):
                     before = dict(t)
@@ -632,13 +749,18 @@ class Threads:
                         [{"type": "thread.renamed", "before": before, "after": t}],
                         "admin",
                     )
-                    return {"ok": True, "thread": t, "threads": self.summaries()}
+                    return {
+                        "ok": True,
+                        "thread": t,
+                        "threads": self.summaries(admin=admin),
+                    }
         raise ValueError("Thread not found")
 
     def delete(self, thread_id, admin_pass):
         self.check()
         self.admin(admin_pass)
         with self.lock:
+            admin = self.admin_authorized(admin_pass)
             for i, t in enumerate(self.data.get("threads", [])):  # ty:ignore[invalid-argument-type]
                 if t["id"] == str(thread_id or ""):  # ty:ignore[not-subscriptable]
                     old = self.data["threads"].pop(i)  # ty:ignore[unresolved-attribute]
@@ -646,13 +768,14 @@ class Threads:
                     self.tracker.push(
                         "threads", [{"type": "thread.removed", "before": old}], "admin"
                     )
-                    return {"ok": True, "threads": self.summaries()}
+                    return {"ok": True, "threads": self.summaries(admin=admin)}
         raise ValueError("Thread not found")
 
     def delete_msg(self, thread_id, message_id, admin_pass):
         self.check()
         self.admin(admin_pass)
         with self.lock:
+            admin = self.admin_authorized(admin_pass)
             for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
                 if t["id"] == str(thread_id or ""):
                     for i, m in enumerate(t.get("messages", [])):
@@ -674,20 +797,28 @@ class Threads:
                             return {
                                 "ok": True,
                                 "thread": t,
-                                "threads": self.summaries(),
+                                "threads": self.summaries(admin=admin),
                             }
         raise ValueError("Message not found")
-    def edit_msg(self, thread_id, message_id, html_value, admin_pass):
+    def edit_msg(self, token, thread_id, message_id, html_value, admin_pass=None):
         self.check()
-        self.admin(admin_pass)
         body = safe_html(html_value)
         if not body.strip():
             raise ValueError("Message is empty")
         with self.lock:
+            u = self.user(token)
+            admin = self.admin_authorized(admin_pass)
             for t in self.data.get("threads", []):  # ty:ignore[not-iterable]
                 if t["id"] == str(thread_id or ""):
+                    self.assert_thread_access(t, u["username"], admin=admin)
                     for m in t.get("messages", []):
                         if m["id"] == str(message_id or ""):
+                            if str(m.get("username") or "").casefold() != str(
+                                u["username"]
+                            ).casefold():
+                                raise PermissionError(
+                                    "You can only edit your own messages"
+                                )
                             old = dict(m)
                             m["html"] = body
                             m["edited_at"] = now()
@@ -708,7 +839,7 @@ class Threads:
                             return {
                                 "ok": True,
                                 "thread": t,
-                                "threads": self.summaries(),
+                                "threads": self.summaries(u["username"]),
                             }
         raise ValueError("Message not found")
 
@@ -798,6 +929,14 @@ def make_handler(app: App):
             if self.headers.get(header, "") != expected:
                 raise PermissionError(f"Wiki {label} password is incorrect")
 
+        def thread_token(self):
+            return self.headers.get("X-Maybelle-Thread-Token", "")
+
+        def thread_admin_pass(self):
+            return self.headers.get("X-Maybelle-Thread-Admin-Pass", "") or self.headers.get(
+                "X-Maybelle-Admin-Pass", ""
+            )
+
         def require_read_pass(self):
             self._check_pass("X-Maybelle-Read-Pass", app.read_pass, "read")
 
@@ -834,7 +973,9 @@ def make_handler(app: App):
                     return self.json({"ok": True, "threads": app.threads.status()})
                 if p in ("/api/threads", "/api/threads/"):
                     self.require_read_pass()
-                    return self.json(app.threads.list())
+                    return self.json(
+                        app.threads.list(self.thread_token(), self.thread_admin_pass())
+                    )
                 if p in ("/api/admin/backups", "/api/admin/backups/"):
                     self.require_read_pass()
                     return self.json(app.tracker.list_backups())
@@ -888,47 +1029,75 @@ def make_handler(app: App):
                     )
                 if p in ("/api/threads/create", "/api/threads/create/"):
                     self.require_write_pass()
-                    return self.json(app.threads.create(d.get("token"), d.get("name")))
+                    return self.json(
+                        app.threads.create(d.get("token") or self.thread_token(), d.get("name"))
+                    )
                 if p in ("/api/threads/thread", "/api/threads/thread/"):
                     self.require_read_pass()
-                    return self.json(app.threads.get(d.get("thread_id")))
+                    return self.json(
+                        app.threads.get(
+                            d.get("thread_id"),
+                            self.thread_token(),
+                            self.thread_admin_pass(),
+                        )
+                    )
                 if p in ("/api/threads/message", "/api/threads/message/"):
                     self.require_write_pass()
                     return self.json(
                         app.threads.message(
-                            d.get("token"),
+                            d.get("token") or self.thread_token(),
                             d.get("thread_id"),
                             d.get("html"),
                             d.get("images"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
+                        )
+                    )
+                if p in ("/api/threads/access", "/api/threads/access/"):
+                    self.require_write_pass()
+                    return self.json(
+                        app.threads.set_access(
+                            d.get("thread_id"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
+                            d.get("whitelist_enabled"),
+                            d.get("whitelist"),
+                            d.get("blacklist"),
                         )
                     )
                 if p in ("/api/threads/rename", "/api/threads/rename/"):
                     self.require_write_pass()
                     return self.json(
                         app.threads.rename(
-                            d.get("thread_id"), d.get("name"), d.get("admin_pass")
+                            d.get("thread_id"),
+                            d.get("name"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
                         )
                     )
                 if p in ("/api/threads/delete", "/api/threads/delete/"):
                     self.require_write_pass()
                     return self.json(
-                        app.threads.delete(d.get("thread_id"), d.get("admin_pass"))
+                        app.threads.delete(
+                            d.get("thread_id"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
+                        )
                     )
                 if p in ("/api/threads/message/delete", "/api/threads/message/delete/"):
                     self.require_write_pass()
                     return self.json(
                         app.threads.delete_msg(
-                            d.get("thread_id"), d.get("message_id"), d.get("admin_pass")
+                            d.get("thread_id"),
+                            d.get("message_id"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
                         )
                     )
                 if p in ("/api/threads/message/edit", "/api/threads/message/edit/"):
                     self.require_write_pass()
                     return self.json(
                         app.threads.edit_msg(
+                            d.get("token") or self.thread_token(),
                             d.get("thread_id"),
                             d.get("message_id"),
                             d.get("html"),
-                            d.get("admin_pass"),
+                            self.thread_admin_pass() or d.get("admin_pass"),
                         )
                     )
                 return self.text("Not found", 404)

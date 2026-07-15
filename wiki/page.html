@@ -310,6 +310,45 @@
                       </div>
                       <div class="editor-card-body">
                         <div id="threadAdminControls" class="toolbar"></div>
+                        <div id="threadAccessPanel" class="thread-access-panel hidden">
+                          <div class="thread-access-header">
+                            <strong>Thread Access</strong
+                            ><label class="inline-check"
+                              ><input
+                                id="threadWhitelistEnabledInput"
+                                type="checkbox"
+                              />Whitelist mode</label
+                            >
+                          </div>
+                          <div class="thread-access-grid">
+                            <div class="field-group">
+                              <label>Whitelist</label
+                              ><textarea
+                                id="threadWhitelistInput"
+                                class="thread-access-list"
+                                placeholder="One username per line"
+                              ></textarea>
+                            </div>
+                            <div class="field-group">
+                              <label>Blacklist</label
+                              ><textarea
+                                id="threadBlacklistInput"
+                                class="thread-access-list"
+                                placeholder="One username per line"
+                              ></textarea>
+                            </div>
+                          </div>
+                          <div class="thread-access-actions">
+                            <button id="saveThreadAccessButton" class="primary">
+                              Save Access Rules
+                            </button>
+                          </div>
+                          <div class="muted thread-access-note">
+                            Whitelist mode allows only listed usernames and the
+                            thread creator. Otherwise the blacklist blocks listed
+                            usernames.
+                          </div>
+                        </div>
                         <div id="threadMessages" class="thread-messages"></div>
                         <div class="rich-toolbar">
                           <button data-rich-command="bold"><b>B</b></button

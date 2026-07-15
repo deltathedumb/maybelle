@@ -14,14 +14,19 @@ async function threadsRequest(path, options = {}, mode = "read") {
     throw new Error(
       "Threads require opening the editor through the Python host.",
     );
-  const fetcher = typeof backendRequest === "function" ? backendRequest : null;
-  if (fetcher) return fetcher(path, options, mode);
+  const adminPass =
+    typeof currentAdminPass === "function" ? currentAdminPass() : "";
+  const threadHeaders = threadUsernameToken
+    ? { "X-Maybelle-Thread-Token": threadUsernameToken }
+    : {};
+  if (adminPass) threadHeaders["X-Maybelle-Admin-Pass"] = adminPass;
   const headers =
     typeof wikiAuthHeaders === "function" ? wikiAuthHeaders(mode) : {};
   const r = await fetch(base + path, {
     cache: "no-store",
     ...options,
     headers: {
+      ...threadHeaders,
       ...(options.headers || {}),
       ...headers,
     },
@@ -92,16 +97,25 @@ async function createThread() {
 async function refreshThreads() {
   const r = await threadsRequest("/api/threads", {}, "read");
   renderThreads(r);
-  if (selectedThreadId) await loadThread(selectedThreadId);
+  if (selectedThreadId) {
+    try {
+      await loadThread(selectedThreadId);
+    } catch (e) {
+      setStatus(e.message || "Could not load thread.", "warning");
+    }
+  }
 }
 function renderThreads(data) {
   const threads = data.threads || [],
     list = $("threadList");
   if (!threads.length) {
-    list.innerHTML = '<div class="empty-state">No threads yet.</div>';
+    selectedThreadId = "";
+    sessionStorage.removeItem("maybelleSelectedThreadId");
+    list.innerHTML = '<div class="empty-state">No accessible threads.</div>';
     $("selectedThreadTitle").textContent = "No thread selected";
     $("threadMessages").innerHTML =
-      '<div class="muted">Create a thread to begin.</div>';
+      '<div class="muted">No accessible thread selected.</div>';
+    renderThreadAccess(null);
     return;
   }
   if (!selectedThreadId || !threads.some((t) => t.id === selectedThreadId)) {
@@ -131,8 +145,34 @@ async function loadThread(id) {
   }, "read");
   renderThread(r.thread);
 }
+function sameThreadUsername(a, b) {
+  return String(a || "").trim().toLowerCase() === String(b || "").trim().toLowerCase();
+}
+function parseThreadNames(text) {
+  return Array.from(
+    new Set(
+      String(text || "")
+        .split(/\r?\n/)
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+  );
+}
+function renderThreadAccess(thread) {
+  const panel = $("threadAccessPanel");
+  if (!panel) return;
+  if (!thread) {
+    panel.classList.add("hidden");
+    return;
+  }
+  panel.classList.remove("hidden");
+  $("threadWhitelistEnabledInput").checked = Boolean(thread.whitelist_enabled);
+  $("threadWhitelistInput").value = (thread.whitelist || []).join("\n");
+  $("threadBlacklistInput").value = (thread.blacklist || []).join("\n");
+}
 function renderThread(thread) {
   $("selectedThreadTitle").textContent = thread.name || "Thread";
+  renderThreadAccess(thread);
   const msgs = thread.messages || [];
   $("threadMessages").innerHTML = msgs.length
     ? msgs.map(renderThreadMessage).join("")
@@ -151,10 +191,11 @@ function renderThread(thread) {
 }
 function renderThreadMessage(m) {
   const imgs = Array.isArray(m.images) ? m.images : [];
+  const canEdit = sameThreadUsername(m.username, threadUsername);
   const imgHtml = imgs.length
     ? `<div class="thread-images">${imgs.map((i) => `<img class="thread-image" src="${escapeHtml(i.data_url)}" alt="${escapeHtml(i.name || "image")}">`).join("")}</div>`
     : "";
-  return `<div class="thread-message"><div class="thread-message-meta"><span class="thread-message-name">${escapeHtml(m.username || "Unknown")}</span> · ${escapeHtml(m.created_at || "")} · <button class="small" data-edit-message="${escapeHtml(m.id)}">Edit</button> <button class="small danger" data-delete-message="${escapeHtml(m.id)}">Delete</button></div><div class="thread-message-body">${m.html || ""}</div>${m.edited_at ? `<div class="thread-edited">edited ${escapeHtml(m.edited_at)}</div>` : ""}${imgHtml}</div>`;
+  return `<div class="thread-message"><div class="thread-message-meta"><span class="thread-message-name">${escapeHtml(m.username || "Unknown")}</span> · ${escapeHtml(m.created_at || "")}${canEdit ? ` · <button class="small" data-edit-message="${escapeHtml(m.id)}">Edit</button>` : ""} <button class="small danger" data-delete-message="${escapeHtml(m.id)}">Delete</button></div><div class="thread-message-body">${m.html || ""}</div>${m.edited_at ? `<div class="thread-edited">edited ${escapeHtml(m.edited_at)}</div>` : ""}${imgHtml}</div>`;
 }
 async function sendThreadMessage() {
   try {
@@ -291,6 +332,15 @@ async function deleteSelectedThread() {
   renderThreads(r);
 }
 async function editThreadMessage(message_id) {
+  const msg =
+    document
+      .querySelector(`[data-edit-message="${CSS.escape(message_id)}"]`)
+      ?.closest(".thread-message");
+  const author = msg?.querySelector(".thread-message-name")?.textContent || "";
+  if (!sameThreadUsername(author, threadUsername)) {
+    setStatus("You can only edit your own messages.", "warning");
+    return;
+  }
   const current =
     document
       .querySelector(`[data-edit-message="${CSS.escape(message_id)}"]`)
@@ -310,6 +360,7 @@ async function editThreadMessage(message_id) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      token: threadUsernameToken,
       thread_id: selectedThreadId,
       message_id,
       html,
@@ -335,6 +386,7 @@ async function deleteThreadMessage(message_id) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
+      token: threadUsernameToken,
       thread_id: selectedThreadId,
       message_id,
       admin_pass,
@@ -364,11 +416,37 @@ function initThreads() {
   $("richLinkButton").onclick = addRichLink;
   $("threadAdminControls").innerHTML =
     '<button id="renameThreadButton">Rename Thread</button><button id="deleteThreadButton" class="danger">Delete Thread</button>';
+  $("saveThreadAccessButton").onclick = () =>
+    saveThreadAccess().catch((e) => setStatus(e.message, "error"));
   $("renameThreadButton").onclick = () =>
     renameSelectedThread().catch((e) => setStatus(e.message, "error"));
   $("deleteThreadButton").onclick = () =>
     deleteSelectedThread().catch((e) => setStatus(e.message, "error"));
   startThreadPolling();
+}
+async function saveThreadAccess() {
+  if (!selectedThreadId) {
+    setStatus("Select a thread first.", "warning");
+    return;
+  }
+  const admin_pass = typeof currentAdminPass === "function" ? currentAdminPass() : "";
+  const whitelist_enabled = $("threadWhitelistEnabledInput").checked;
+  const whitelist = parseThreadNames($("threadWhitelistInput").value);
+  const blacklist = parseThreadNames($("threadBlacklistInput").value);
+  const r = await threadsRequest("/api/threads/access", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      thread_id: selectedThreadId,
+      whitelist_enabled,
+      whitelist,
+      blacklist,
+      admin_pass,
+    }),
+  }, "write");
+  renderThreads(r);
+  await loadThread(selectedThreadId);
+  setStatus("Thread access rules saved.", "success");
 }
 window.refreshThreadsStatus = refreshThreadsStatus;
 window.initThreads = initThreads;
