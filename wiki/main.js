@@ -1,5 +1,10 @@
-const STORAGE_KEY = "maybelle.wiki.editor.v3";
-const AUTH_STORAGE_KEY = "maybelle.wiki.auth.v1";
+const STORAGE_KEY = "maybelle.wiki.editor.v4";
+const LEGACY_STORAGE_KEY = "maybelle.wiki.editor.v3";
+const AUTH_STORAGE_KEY = "maybelle.wiki.auth.v2";
+const LEGACY_AUTH_STORAGE_KEY = "maybelle.wiki.auth.v1";
+const ARCHIVE_STORAGE_KEY = "maybelle.wiki.archive.v1";
+const DEFAULT_CHECKPOINT_BUFFER_SIZE = 5;
+const CHECKPOINT_INTERVAL_MS = 5 * 60 * 1000;
 const BACKEND_MODE =
   location.protocol === "http:" || location.protocol === "https:";
 const BACKEND_BASE_URL = BACKEND_MODE ? location.origin : "";
@@ -8,8 +13,10 @@ let appData = createEmptyData(),
   selectedRootId = null,
   selectedEntryId = null,
   autosaveTimer = null,
+  checkpointTimer = null,
   activeTextField = null;
 let wikiAuth = loadWikiAuth();
+let archiveAuth = loadArchiveAuth();
 const CANON_ROOTS = [
   ["А", "Existence", "Being, presence, reality"],
   ["Б", "Becoming", "Change, emergence, transformation"],
@@ -90,15 +97,69 @@ function stableImportedId(prefix, item, index) {
   }
   return `${prefix}-import-${index + 1}-${(h >>> 0).toString(36)}`;
 }
+function clampInt(value, min, max, fallback) {
+  const n = Number.parseInt(String(value), 10);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.min(max, Math.max(min, n));
+}
+function dedupeStrings(values) {
+  return Array.from(
+    new Set(
+      (Array.isArray(values) ? values : [])
+        .map((v) => String(v || "").trim())
+        .filter(Boolean),
+    ),
+  );
+}
 function loadWikiAuth() {
   try {
-    return JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "{}") || {};
+    const current = JSON.parse(localStorage.getItem(AUTH_STORAGE_KEY) || "{}") || {};
+    if (Object.keys(current).length) return current;
+    const legacy =
+      JSON.parse(localStorage.getItem(LEGACY_AUTH_STORAGE_KEY) || "{}") || {};
+    if (Object.keys(legacy).length) {
+      localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(legacy));
+      return legacy;
+    }
+    return {};
   } catch {
     return {};
   }
 }
 function saveWikiAuth() {
   localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify(wikiAuth));
+}
+function loadArchiveAuth() {
+  try {
+    return JSON.parse(localStorage.getItem(ARCHIVE_STORAGE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+function saveArchiveAuth() {
+  localStorage.setItem(ARCHIVE_STORAGE_KEY, JSON.stringify(archiveAuth));
+}
+function loadStoredWikiJson() {
+  const current = localStorage.getItem(STORAGE_KEY);
+  if (current) return current;
+  const legacy = localStorage.getItem(LEGACY_STORAGE_KEY);
+  if (legacy) {
+    localStorage.setItem(STORAGE_KEY, legacy);
+    return legacy;
+  }
+  return "";
+}
+function syncServerInputs() {
+  if ($("serverPullPasswordInput") && document.activeElement !== $("serverPullPasswordInput"))
+    $("serverPullPasswordInput").value = wikiAuth.readPass || "";
+  if ($("serverPushPasswordInput") && document.activeElement !== $("serverPushPasswordInput"))
+    $("serverPushPasswordInput").value = wikiAuth.writePass || "";
+  if ($("serverAdminPasswordInput") && document.activeElement !== $("serverAdminPasswordInput"))
+    $("serverAdminPasswordInput").value = wikiAuth.adminPass || "";
+}
+function syncArchivePasswordInput() {
+  if ($("archivePasswordInput") && document.activeElement !== $("archivePasswordInput"))
+    $("archivePasswordInput").value = archiveAuth.password || "";
 }
 function wikiAuthHeaders(mode) {
   const headers = {};
@@ -148,6 +209,75 @@ async function backendRequest(path, options = {}, mode = "read", retry = true) {
     throw new Error(d.error || `Backend returned HTTP ${r.status}`);
   return d;
 }
+function normalizeRootRecord(r, i) {
+  return {
+    id: stableImportedId("root", r, i),
+    glyph: String(r?.glyph || ""),
+    root_name: String(r?.root_name || r?.rootName || ""),
+    description: String(r?.description || ""),
+    notes: String(r?.notes || ""),
+    canon: Boolean(r?.canon),
+  };
+}
+function normalizeEntryRecord(e, i) {
+  return {
+    id: stableImportedId("entry", e, i),
+    compound: String(e?.compound || e?.word || ""),
+    description: String(e?.description || e?.meaning || ""),
+    literal_meaning: String(e?.literal_meaning || e?.literalMeaning || ""),
+    notes: String(e?.notes || ""),
+    fields:
+      e?.fields && typeof e.fields === "object" && !Array.isArray(e.fields)
+        ? e.fields
+        : {},
+    canon: Boolean(e?.canon),
+  };
+}
+function normalizeCheckpointRecord(cp, i) {
+  const source = cp && typeof cp === "object" ? cp : {};
+  const snapshot =
+    source.snapshot && typeof source.snapshot === "object"
+      ? source.snapshot
+      : source;
+  const normalizedSnapshot = repairDuplicateIdsInData({
+    schema_version: 4,
+    updated_at: String(snapshot.updated_at || snapshot.updatedAt || now()),
+    roots: Array.isArray(snapshot.roots)
+      ? snapshot.roots.map((r, n) => normalizeRootRecord(r, n))
+      : [],
+    dictionary: Array.isArray(snapshot.dictionary)
+      ? snapshot.dictionary.map((e, n) => normalizeEntryRecord(e, n))
+      : [],
+    grammar_notes: String(
+      snapshot.grammar_notes || snapshot.grammarNotes || "",
+    ),
+    frozen_root_ids: dedupeStrings(
+      snapshot.frozen_root_ids || snapshot.frozenRootIds || [],
+    ),
+    checkpoint_buffer_size: clampInt(
+      snapshot.checkpoint_buffer_size || snapshot.checkpointBufferSize,
+      1,
+      50,
+      DEFAULT_CHECKPOINT_BUFFER_SIZE,
+    ),
+    next_checkpoint_at:
+      snapshot.next_checkpoint_at || snapshot.nextCheckpointAt || null,
+    checkpoints: [],
+  });
+  return {
+    id: stableImportedId("checkpoint", source, i),
+    created_at: String(
+      source.created_at ||
+        source.createdAt ||
+        snapshot.created_at ||
+        snapshot.createdAt ||
+        now(),
+    ),
+    label: String(source.label || snapshot.label || ""),
+    summary: String(source.summary || snapshot.summary || ""),
+    snapshot: normalizedSnapshot,
+  };
+}
 function repairDuplicateIdsInData(data) {
   const sr = new Set();
   data.roots.forEach((r, i) => {
@@ -161,6 +291,8 @@ function repairDuplicateIdsInData(data) {
       e.id = stableImportedId("entry", { ...e, id: "", _repair: i }, i);
     se.add(e.id);
   });
+  if (!Array.isArray(data.checkpoints)) data.checkpoints = [];
+  data.checkpoints = data.checkpoints.map((cp, i) => normalizeCheckpointRecord(cp, i));
   return data;
 }
 function repairDuplicateIds() {
@@ -168,11 +300,15 @@ function repairDuplicateIds() {
 }
 function createEmptyData() {
   return {
-    schema_version: 3,
+    schema_version: 4,
     updated_at: new Date().toISOString(),
     roots: [],
     dictionary: [],
     grammar_notes: "",
+    frozen_root_ids: [],
+    checkpoint_buffer_size: DEFAULT_CHECKPOINT_BUFFER_SIZE,
+    next_checkpoint_at: new Date(Date.now() + CHECKPOINT_INTERVAL_MS).toISOString(),
+    checkpoints: [],
   };
 }
 function normalizeImportedData(raw) {
@@ -183,34 +319,28 @@ function normalizeImportedData(raw) {
       ? raw.dictionary
       : Array.isArray(raw.entries)
         ? raw.entries
-        : [];
+        : [],
+    checkpoints = Array.isArray(raw.checkpoints) ? raw.checkpoints : [];
   const data = {
-    schema_version: 3,
+    schema_version: 4,
     imported_from_schema_version: Number(
       raw.schema_version || raw.schemaVersion || 1,
     ),
     updated_at: raw.updated_at || raw.updatedAt || new Date().toISOString(),
-    roots: roots.map((r, i) => ({
-      id: stableImportedId("root", r, i),
-      glyph: String(r?.glyph || ""),
-      root_name: String(r?.root_name || r?.rootName || ""),
-      description: String(r?.description || ""),
-      notes: String(r?.notes || ""),
-      canon: Boolean(r?.canon),
-    })),
-    dictionary: dict.map((e, i) => ({
-      id: stableImportedId("entry", e, i),
-      compound: String(e?.compound || e?.word || ""),
-      description: String(e?.description || e?.meaning || ""),
-      literal_meaning: String(e?.literal_meaning || e?.literalMeaning || ""),
-      notes: String(e?.notes || ""),
-      fields:
-        e?.fields && typeof e.fields === "object" && !Array.isArray(e.fields)
-          ? e.fields
-          : {},
-      canon: Boolean(e?.canon),
-    })),
+    roots: roots.map((r, i) => normalizeRootRecord(r, i)),
+    dictionary: dict.map((e, i) => normalizeEntryRecord(e, i)),
     grammar_notes: String(raw.grammar_notes || raw.grammarNotes || ""),
+    frozen_root_ids: dedupeStrings(
+      raw.frozen_root_ids || raw.frozenRootIds || [],
+    ),
+    checkpoint_buffer_size: clampInt(
+      raw.checkpoint_buffer_size || raw.checkpointBufferSize,
+      1,
+      50,
+      DEFAULT_CHECKPOINT_BUFFER_SIZE,
+    ),
+    next_checkpoint_at: raw.next_checkpoint_at || raw.nextCheckpointAt || null,
+    checkpoints: checkpoints.map((cp, i) => normalizeCheckpointRecord(cp, i)),
   };
   sortDictionary(data);
   return repairDuplicateIdsInData(data);
@@ -308,11 +438,10 @@ async function saveLocal() {
 }
 async function loadLocal() {
   try {
+    const stored = loadStoredWikiJson();
     appData = BACKEND_MODE
       ? await loadFromBackend()
-      : normalizeImportedData(
-          JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}"),
-        );
+      : normalizeImportedData(JSON.parse(stored || "{}"));
     repairDuplicateIds();
     preserveSelections();
     renderEverything();
@@ -327,7 +456,7 @@ async function loadLocal() {
 }
 function syncEditorsToData() {
   appData.updated_at = new Date().toISOString();
-  appData.schema_version = 3;
+  appData.schema_version = 4;
   let r = appData.roots.find((x) => x.id === selectedRootId);
   if (r && !$("rootEditorFields").classList.contains("hidden")) {
     r.glyph = $("rootGlyphInput").value.trim();
@@ -344,6 +473,22 @@ function syncEditorsToData() {
     e.fields = collectExtraFields();
   }
   appData.grammar_notes = $("grammarNotesInput").value;
+  if ($("checkpointBufferSizeInput")) {
+    appData.checkpoint_buffer_size = clampInt(
+      $("checkpointBufferSizeInput").value,
+      1,
+      50,
+      DEFAULT_CHECKPOINT_BUFFER_SIZE,
+    );
+  } else {
+    appData.checkpoint_buffer_size = clampInt(
+      appData.checkpoint_buffer_size,
+      1,
+      50,
+      DEFAULT_CHECKPOINT_BUFFER_SIZE,
+    );
+  }
+  appData.frozen_root_ids = dedupeStrings(appData.frozen_root_ids || []);
   sortDictionary();
 }
 function collectExtraFields() {
@@ -365,7 +510,8 @@ function updateAllViewsSoft() {
   renderSidebarQuickLists();
   renderStats();
   renderRootTablePreview();
-  renderJsonPreview();
+  if (currentView === "archive") renderArchiveView();
+  if (currentView === "server") renderServerView();
   if (currentView === "roots") renderRootList();
   if (currentView === "dictionary") renderEntryList();
 }
@@ -379,7 +525,8 @@ function renderEverything() {
   renderRootEditor();
   renderEntryEditor();
   $("grammarNotesInput").value = appData.grammar_notes || "";
-  renderJsonPreview();
+  renderArchiveView();
+  renderServerView();
   switchView(currentView, false);
 }
 function switchView(view, sync = true) {
@@ -404,7 +551,8 @@ function switchView(view, sync = true) {
       "Threads",
       "Persistent named discussions through the Python host.",
     ],
-    archive: ["Archive", "Save, import, export, and inspect JSON."],
+    server: ["Server", "Store pull, push, and admin passwords."],
+    archive: ["Archive", "Encrypt exports and manage checkpoints."],
   };
   $("viewTitle").textContent = t[view][0];
   $("viewSubtitle").textContent = t[view][1];
@@ -416,7 +564,8 @@ function switchView(view, sync = true) {
     renderEntryList();
     renderEntryEditor();
   }
-  if (view === "archive") renderJsonPreview();
+  if (view === "archive") renderArchiveView();
+  if (view === "server") renderServerView();
   if (view === "threads" && window.refreshThreadsStatus)
     window.refreshThreadsStatus();
 }
@@ -550,6 +699,7 @@ function renderRootEditor() {
     return;
   }
   const locked = r.canon && !$("unlockCanonRoots")?.checked;
+  const frozen = isRootFrozen(r.id);
   $("rootEmptyState").classList.add("hidden");
   $("rootEditorFields").classList.remove("hidden");
   $("rootEditorTitle").textContent =
@@ -561,11 +711,13 @@ function renderRootEditor() {
   ["rootGlyphInput", "rootNameInput", "rootDescriptionInput"].forEach(
     (id) => ($(id).disabled = locked),
   );
-  $("deleteRootButton").disabled = locked;
+  $("deleteRootButton").disabled = locked || frozen;
   $("rootCanonNotice").classList.toggle("hidden", !r.canon);
-  $("rootCanonNotice").textContent = locked
-    ? "Canon root: locked to preserve the stable Maybelle root table. Use Unlock canon root editing to change it."
-    : "Canon root editing is unlocked.";
+  $("rootCanonNotice").textContent = frozen
+    ? "Frozen root: it cannot be deleted, but it can still be edited."
+    : locked
+      ? "Canon root: locked to preserve the stable Maybelle root table. Use Unlock canon root editing to change it."
+      : "Canon root editing is unlocked.";
 }
 function rootBreakdown(compound) {
   return Array.from(compound || "")
@@ -608,6 +760,204 @@ function renderEntryEditor() {
   renderEntryValidation(e);
   renderCompoundBuilder();
 }
+function cloneJson(v) {
+  return JSON.parse(JSON.stringify(v));
+}
+function isRootFrozen(rootId) {
+  return appData.frozen_root_ids.includes(rootId);
+}
+function renderArchiveRootsDisplay() {
+  const host = $("archiveRootsDisplay");
+  if (!host) return;
+  if (!appData.roots.length) {
+    host.innerHTML = '<span class="muted">No roots yet.</span>';
+    return;
+  }
+  host.innerHTML = appData.roots
+    .map(
+      (r) =>
+        `<span class="archive-root-chip" title="${escapeHtml(r.root_name || "")}">${escapeHtml(r.glyph || "·")}</span>`,
+    )
+    .join("");
+}
+function formatDuration(ms) {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0)
+    return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+function nextCheckpointDate() {
+  if (appData.next_checkpoint_at) {
+    const next = new Date(appData.next_checkpoint_at);
+    if (!Number.isNaN(next.getTime())) return next;
+  }
+  const fallback = new Date(Date.now() + CHECKPOINT_INTERVAL_MS);
+  appData.next_checkpoint_at = fallback.toISOString();
+  return fallback;
+}
+function setNextCheckpoint() {
+  appData.next_checkpoint_at = new Date(
+    Date.now() + CHECKPOINT_INTERVAL_MS,
+  ).toISOString();
+}
+function trimCheckpointBuffer() {
+  appData.checkpoint_buffer_size = clampInt(
+    appData.checkpoint_buffer_size,
+    1,
+    50,
+    DEFAULT_CHECKPOINT_BUFFER_SIZE,
+  );
+  if (
+    Array.isArray(appData.checkpoints) &&
+    appData.checkpoints.length > appData.checkpoint_buffer_size
+  ) {
+    appData.checkpoints = appData.checkpoints.slice(
+      -appData.checkpoint_buffer_size,
+    );
+  }
+}
+function currentArchiveSnapshot() {
+  return {
+    roots: cloneJson(appData.roots || []),
+    dictionary: cloneJson(appData.dictionary || []),
+    grammar_notes: appData.grammar_notes || "",
+    frozen_root_ids: cloneJson(appData.frozen_root_ids || []),
+  };
+}
+function renderCheckpointList() {
+  const host = $("checkpointList");
+  if (!host) return;
+  const checkpoints = Array.isArray(appData.checkpoints)
+    ? [...appData.checkpoints].reverse()
+    : [];
+  if (!checkpoints.length) {
+    host.innerHTML = '<div class="checkpoint-empty">No checkpoints yet.</div>';
+    return;
+  }
+  host.innerHTML = checkpoints
+    .map((cp) => {
+      const snapshot = cp.snapshot || {};
+      const summary =
+        cp.summary ||
+        `${(snapshot.roots || []).length} roots, ${(snapshot.dictionary || []).length} words`;
+      return `<div class="checkpoint-row"><div><b>${escapeHtml(cp.created_at || "")}</b><small>${escapeHtml(summary)}</small></div><button data-checkpoint-id="${escapeHtml(cp.id)}">Revert</button></div>`;
+    })
+    .join("");
+  host.querySelectorAll("[data-checkpoint-id]").forEach(
+    (b) =>
+      (b.onclick = () =>
+        revertToCheckpoint(b.dataset.checkpointId).catch((e) =>
+          setStatus(e.message || "Could not revert checkpoint.", "error"),
+        )),
+  );
+}
+function renderArchiveView() {
+  if (!$("archiveView")) return;
+  syncArchivePasswordInput();
+  const bufferInput = $("checkpointBufferSizeInput");
+  if (bufferInput && document.activeElement !== bufferInput)
+    bufferInput.value = String(
+      clampInt(
+        appData.checkpoint_buffer_size,
+        1,
+        50,
+        DEFAULT_CHECKPOINT_BUFFER_SIZE,
+      ),
+    );
+  renderArchiveRootsDisplay();
+  renderCheckpointList();
+  const countdown = $("checkpointCountdown");
+  if (countdown)
+    countdown.textContent = formatDuration(
+      nextCheckpointDate().getTime() - Date.now(),
+    );
+}
+function renderServerView() {
+  if (!$("serverView")) return;
+  syncServerInputs();
+}
+function tickCheckpointTimer() {
+  if (!$("checkpointCountdown")) return;
+  const remaining = nextCheckpointDate().getTime() - Date.now();
+  if (remaining <= 0) {
+    makeCheckpoint(true).catch((e) =>
+      setStatus(e.message || "Could not create checkpoint.", "error"),
+    );
+    return;
+  }
+  $("checkpointCountdown").textContent = formatDuration(remaining);
+}
+function startCheckpointTimer() {
+  clearInterval(checkpointTimer);
+  checkpointTimer = setInterval(() => {
+    if (currentView === "archive") renderArchiveView();
+    tickCheckpointTimer();
+  }, 1000);
+  tickCheckpointTimer();
+}
+async function makeCheckpoint(auto = false) {
+  syncEditorsToData();
+  trimCheckpointBuffer();
+  const snapshot = currentArchiveSnapshot();
+  const lastCheckpoint = appData.checkpoints?.[appData.checkpoints.length - 1];
+  const fingerprint = JSON.stringify(snapshot);
+  if (auto && lastCheckpoint && JSON.stringify(lastCheckpoint.snapshot || {}) === fingerprint) {
+    setNextCheckpoint();
+    if (BACKEND_MODE) await saveToBackend(false);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    renderArchiveView();
+    updateAllViewsSoft();
+    return;
+  }
+  const checkpoint = {
+    id: uid("checkpoint"),
+    created_at: new Date().toISOString(),
+    summary: `${snapshot.roots.length} roots, ${snapshot.dictionary.length} words`,
+    snapshot,
+  };
+  appData.checkpoints = [...(appData.checkpoints || []), checkpoint];
+  trimCheckpointBuffer();
+  setNextCheckpoint();
+  if (BACKEND_MODE) await saveToBackend(false);
+  else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+  renderArchiveView();
+  updateAllViewsSoft();
+  if (!auto)
+    setStatus(
+      "Checkpoint created.",
+      "success",
+    );
+}
+async function revertToCheckpoint(checkpointId) {
+  const checkpoint = appData.checkpoints.find((cp) => cp.id === checkpointId);
+  if (!checkpoint) throw new Error("Checkpoint not found");
+  if (
+    !(await showConfirm({
+      title: "Revert Checkpoint",
+      message: `Revert to checkpoint from ${checkpoint.created_at || "unknown time"}?`,
+      confirmText: "Revert",
+      danger: true,
+    }))
+  )
+    return;
+  const snapshot = checkpoint.snapshot || {};
+  appData.roots = cloneJson(snapshot.roots || []);
+  appData.dictionary = cloneJson(snapshot.dictionary || []);
+  appData.grammar_notes = snapshot.grammar_notes || "";
+  appData.frozen_root_ids = cloneJson(snapshot.frozen_root_ids || []);
+  appData.updated_at = new Date().toISOString();
+  setNextCheckpoint();
+  trimCheckpointBuffer();
+  repairDuplicateIds();
+  preserveSelections();
+  if (BACKEND_MODE) await saveToBackend(false);
+  else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+  renderEverything();
+  setStatus("Reverted to checkpoint.", "success");
+}
 function addRoot() {
   syncEditorsToData();
   const r = {
@@ -643,6 +993,10 @@ async function deleteSelectedRoot() {
   if (!selectedRootId) return;
   const r = appData.roots.find((x) => x.id === selectedRootId);
   if (!r) return;
+  if (isRootFrozen(r.id)) {
+    setStatus("Frozen roots cannot be deleted.", "warning");
+    return;
+  }
   if (r.canon && !$("unlockCanonRoots")?.checked) {
     setStatus(
       "Canon roots are locked. Unlock canon root editing first.",
@@ -698,9 +1052,152 @@ function addExtraFieldRow(k = "", v = "") {
   row.addEventListener("input", autosave);
   $("entryExtraFields").appendChild(row);
 }
-function renderJsonPreview() {
+function renderJsonPreview() {}
+function archivePasswordValue() {
+  return String($("archivePasswordInput")?.value || "");
+}
+function persistArchivePassword() {
+  archiveAuth.password = $("archivePasswordInput")?.value || "";
+  saveArchiveAuth();
+}
+function bytesToBase64(bytes) {
+  let s = "";
+  bytes.forEach((b) => (s += String.fromCharCode(b)));
+  return btoa(s);
+}
+function base64ToBytes(text) {
+  const raw = atob(text);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  return bytes;
+}
+async function deriveArchiveKey(password, salt, mode) {
+  if (!crypto?.subtle) throw new Error("Archive encryption is unavailable.");
+  const material = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(password),
+    "PBKDF2",
+    false,
+    ["deriveKey"],
+  );
+  return crypto.subtle.deriveKey(
+    {
+      name: "PBKDF2",
+      salt,
+      iterations: 210000,
+      hash: "SHA-256",
+    },
+    material,
+    { name: "AES-GCM", length: 256 },
+    false,
+    [mode],
+  );
+}
+async function encryptArchiveText(text, password) {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const key = await deriveArchiveKey(password, salt, "encrypt");
+  const payload = await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv },
+    key,
+    new TextEncoder().encode(text),
+  );
+  return {
+    format: "maybelle-encrypted-archive",
+    version: 1,
+    iterations: 210000,
+    salt: bytesToBase64(salt),
+    iv: bytesToBase64(iv),
+    ciphertext: bytesToBase64(new Uint8Array(payload)),
+  };
+}
+async function decryptArchiveText(payload, password) {
+  if (!payload || typeof payload !== "object")
+    throw new Error("Archive file is not valid.");
+  if (payload.format !== "maybelle-encrypted-archive")
+    return JSON.stringify(payload);
+  if (!password) throw new Error("Archive password is required.");
+  const salt = base64ToBytes(payload.salt || "");
+  const iv = base64ToBytes(payload.iv || "");
+  const ciphertext = base64ToBytes(payload.ciphertext || "");
+  const key = await deriveArchiveKey(password, salt, "decrypt");
+  const text = await crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    ciphertext,
+  );
+  return new TextDecoder().decode(text);
+}
+async function saveArchiveFile() {
   syncEditorsToData();
-  $("jsonPreview").textContent = JSON.stringify(appData, null, 2);
+  const password = archivePasswordValue();
+  persistArchivePassword();
+  const payload = JSON.stringify(appData, null, 2);
+  if (password) {
+    const encrypted = await encryptArchiveText(payload, password);
+    downloadText(
+      "maybelle_wiki_archive.encrypted.json",
+      JSON.stringify(encrypted, null, 2),
+    );
+    setStatus("Encrypted archive saved.", "success");
+    return;
+  }
+  downloadText("maybelle_wiki_archive.json", payload);
+  setStatus("Archive saved without encryption.", "warning");
+}
+async function loadArchiveFile(file) {
+  const text = await file.text();
+  const parsed = JSON.parse(text);
+  const password = archivePasswordValue();
+  try {
+    const restored = await decryptArchiveText(parsed, password);
+    appData = normalizeImportedData(JSON.parse(restored));
+    repairDuplicateIds();
+    preserveSelections();
+    if (BACKEND_MODE) await saveToBackend(false);
+    else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+    renderEverything();
+    setStatus(
+      parsed.format === "maybelle-encrypted-archive"
+        ? "Encrypted archive loaded."
+        : "Archive loaded.",
+      "success",
+    );
+  } catch (e) {
+    if (parsed.format === "maybelle-encrypted-archive") {
+      throw new Error("Archive password is incorrect or the file is corrupted.");
+    }
+    throw e;
+  }
+}
+async function openArchiveFilePicker() {
+  const input = $("archiveFileInput");
+  if (!input) return;
+  input.value = "";
+  input.click();
+}
+function saveServerPasswords() {
+  wikiAuth.readPass = $("serverPullPasswordInput")?.value || "";
+  wikiAuth.writePass = $("serverPushPasswordInput")?.value || "";
+  wikiAuth.adminPass = $("serverAdminPasswordInput")?.value || "";
+  if (wikiAuth.readPass && !wikiAuth.writePass) wikiAuth.writePass = wikiAuth.readPass;
+  saveWikiAuth();
+  syncServerInputs();
+}
+async function enterServerPassword() {
+  saveServerPasswords();
+  setStatus("Server passwords saved.", "success");
+}
+async function pullFromServer() {
+  saveServerPasswords();
+  await loadLocal();
+}
+async function pushToServer() {
+  saveServerPasswords();
+  await saveLocal();
+}
+function currentAdminPass() {
+  return wikiAuth.adminPass || prompt("Admin password (leave blank if disabled):") || "";
 }
 async function emptyWiki() {
   if (
@@ -730,38 +1227,6 @@ function downloadText(fn, text) {
   a.click();
   a.remove();
   URL.revokeObjectURL(url);
-}
-async function exportArchive() {
-  syncEditorsToData();
-  downloadText("maybelle_wiki_archive.json", JSON.stringify(appData, null, 2));
-  setStatus("Archive exported.", "success");
-}
-async function importArchive() {
-  const f = $("importFile").files[0];
-  if (!f) {
-    setStatus("Choose an archive first.", "warning");
-    return;
-  }
-  try {
-    appData = normalizeImportedData(JSON.parse(await f.text()));
-    repairDuplicateIds();
-    preserveSelections();
-    if (BACKEND_MODE) await saveToBackend(false);
-    else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
-    renderEverything();
-    setStatus(
-      `Imported schema v${appData.imported_from_schema_version || 1} archive as schema v3.`,
-      "success",
-    );
-  } catch (e) {
-    console.error(e);
-    setStatus(`Import failed: ${e.message || "unknown"}`, "error");
-  }
-}
-async function copyPlainJson() {
-  syncEditorsToData();
-  await navigator.clipboard.writeText(JSON.stringify(appData, null, 2));
-  setStatus("JSON copied.", "success");
 }
 function showConfirm(o = {}) {
   const m = $("confirmModal"),
@@ -936,10 +1401,13 @@ function renderCompoundBuilder() {
 }
 async function refreshBackups() {
   if (!BACKEND_MODE) {
-    $("backupBrowser").innerHTML =
-      '<div class="empty-state">Backup browser requires the Python host.</div>';
+    const browser = $("backupBrowser");
+    if (browser)
+      browser.innerHTML =
+        '<div class="empty-state">Backup browser requires the Python host.</div>';
     return;
   }
+  if (!$("backupBrowser")) return;
   const d = await backendRequest("/api/admin/backups", {}, "read");
   const backupRows = (d.backups || [])
     .map(
@@ -955,7 +1423,8 @@ async function refreshBackups() {
     .forEach((b) => (b.onclick = () => viewBackup(b.dataset.backupName)));
 }
 async function viewBackup(name) {
-  const admin_pass = prompt("Admin password (leave blank if disabled):") || "";
+  if (!$("backupPreview")) return;
+  const admin_pass = currentAdminPass();
   const d = await backendRequest(
     "/api/admin/backup/read",
     {
@@ -973,7 +1442,7 @@ async function forceBackup() {
     setStatus("Manual backups require the Python host.", "warning");
     return;
   }
-  const admin_pass = prompt("Admin password (leave blank if disabled):") || "";
+  const admin_pass = currentAdminPass();
   const d = await backendRequest(
     "/api/admin/backup",
     {
@@ -995,22 +1464,36 @@ function bindEvents() {
     .querySelectorAll("[data-view-jump]")
     .forEach((b) => (b.onclick = () => switchView(b.dataset.viewJump)));
   $("saveLocalButton").onclick = saveLocal;
-  $("loadLocalButton").onclick = loadLocal;
-  $("exportButton").onclick = exportArchive;
-  $("importButton").onclick = importArchive;
-  $("copyJsonButton").onclick = copyPlainJson;
-  $("emptyWikiButton").onclick = emptyWiki;
-  $("refreshPreviewButton").onclick = renderJsonPreview;
+  $("archiveSaveButton").onclick = () =>
+    saveArchiveFile().catch((e) => setStatus(e.message, "error"));
+  $("archiveLoadButton").onclick = openArchiveFilePicker;
+  $("archiveFileInput").onchange = (e) =>
+    loadArchiveFile(e.target.files?.[0]).catch((err) =>
+      setStatus(err.message || "Could not load archive.", "error"),
+    );
+  $("archivePasswordInput").addEventListener("input", persistArchivePassword);
+  $("archiveFreezeButton").onclick = () =>
+    (async () => {
+      appData.frozen_root_ids = dedupeStrings(appData.roots.map((r) => r.id));
+      trimCheckpointBuffer();
+      if (BACKEND_MODE) await saveToBackend(false);
+      else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
+      renderEverything();
+      setStatus("Current roots are frozen against deletion.", "success");
+    })().catch((e) => setStatus(e.message, "error"));
+  $("makeCheckpointButton").onclick = () =>
+    makeCheckpoint(false).catch((e) => setStatus(e.message, "error"));
+  $("serverPullButton").onclick = () =>
+    pullFromServer().catch((e) => setStatus(e.message, "error"));
+  $("serverPushButton").onclick = () =>
+    pushToServer().catch((e) => setStatus(e.message, "error"));
+  $("serverEnterAdminButton").onclick = () =>
+    enterServerPassword().catch((e) => setStatus(e.message, "error"));
   [
     "seedCanonHomeButton",
     "seedCanonRootsButton",
-    "seedCanonArchiveButton",
   ].forEach((id) => ($(id).onclick = seedMaybelleCanon));
   $("unlockCanonRoots").onchange = renderRootEditor;
-  $("forceBackupButton").onclick = () =>
-    forceBackup().catch((e) => setStatus(e.message, "error"));
-  $("refreshBackupsButton").onclick = () =>
-    refreshBackups().catch((e) => setStatus(e.message, "error"));
   $("addRootButton").onclick = addRoot;
   $("homeAddRootButton").onclick = addRoot;
   $("deleteRootButton").onclick = deleteSelectedRoot;
@@ -1033,6 +1516,7 @@ function bindEvents() {
     "entryLiteralInput",
     "entryNotesInput",
     "grammarNotesInput",
+    "checkpointBufferSizeInput",
   ].forEach((id) =>
     $(id).addEventListener("input", () => {
       autosave();
@@ -1052,13 +1536,14 @@ async function boot() {
   setBackendBanner();
   if (window.initThreads) window.initThreads();
   try {
+    const stored = loadStoredWikiJson();
     if (BACKEND_MODE) appData = await loadFromBackend();
-    else if (localStorage.getItem(STORAGE_KEY))
-      appData = normalizeImportedData(
-        JSON.parse(localStorage.getItem(STORAGE_KEY)),
-      );
+    else if (stored) appData = normalizeImportedData(JSON.parse(stored));
     else appData = createEmptyData();
     repairDuplicateIds();
+    trimCheckpointBuffer();
+    if (!appData.next_checkpoint_at) setNextCheckpoint();
+    appData.frozen_root_ids = dedupeStrings(appData.frozen_root_ids || []);
     setStatus(
       BACKEND_MODE ? "Loaded wiki from server file." : "Loaded local wiki.",
       "success",
@@ -1069,6 +1554,9 @@ async function boot() {
     setStatus("Started empty after load failure.", "warning");
   }
   preserveSelections();
+  syncServerInputs();
+  syncArchivePasswordInput();
+  startCheckpointTimer();
   renderEverything();
   setBackendBanner();
 }

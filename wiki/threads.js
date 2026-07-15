@@ -243,7 +243,10 @@ async function renameSelectedThread() {
   if (!selectedThreadId) return;
   const name = prompt("New thread name:");
   if (!name) return;
-  const admin_pass = prompt("Admin password:");
+  const admin_pass =
+    typeof currentAdminPass === "function"
+      ? currentAdminPass()
+      : prompt("Admin password:");
   const r = await threadsRequest("/api/threads/rename", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -263,7 +266,10 @@ async function deleteSelectedThread() {
     }))
   )
     return;
-  const admin_pass = prompt("Admin password:");
+  const admin_pass =
+    typeof currentAdminPass === "function"
+      ? currentAdminPass()
+      : prompt("Admin password:");
   const r = await threadsRequest("/api/threads/delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -281,7 +287,10 @@ async function editThreadMessage(message_id) {
       ?.querySelector(".thread-message-body")?.innerHTML || "";
   const html = prompt("Edit message HTML:", current);
   if (html === null) return;
-  const admin_pass = prompt("Admin password:");
+  const admin_pass =
+    typeof currentAdminPass === "function"
+      ? currentAdminPass()
+      : prompt("Admin password:");
   const r = await threadsRequest("/api/threads/message/edit", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -305,7 +314,10 @@ async function deleteThreadMessage(message_id) {
     }))
   )
     return;
-  const admin_pass = prompt("Admin password:");
+  const admin_pass =
+    typeof currentAdminPass === "function"
+      ? currentAdminPass()
+      : prompt("Admin password:");
   const r = await threadsRequest("/api/threads/message/delete", {
     method: "POST",
     headers: { "Content-Type": "application/json" },

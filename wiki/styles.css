@@ -337,6 +337,9 @@ main {
   grid-template-columns: 80px minmax(0, 1fr) minmax(0, 1fr);
   gap: 10px;
 }
+.server-password-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
 .field-group {
   margin-bottom: 10px;
 }
@@ -671,7 +674,8 @@ main {
   .field-row,
   .searchbar,
   .stats,
-  .threads-layout {
+  .threads-layout,
+  .server-password-grid {
     grid-template-columns: 1fr;
   }
   .topbar {
@@ -786,6 +790,87 @@ main {
 .backup-row small {
   color: var(--muted);
   font-family: Arial, sans-serif;
+}
+.archive-row {
+  border: 1px solid var(--border-light);
+  background: #fff;
+  padding: 10px;
+  margin-bottom: 10px;
+}
+.archive-row > label {
+  margin-top: 0;
+}
+.archive-actions {
+  margin: 8px 0 0;
+}
+.archive-roots-shell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.archive-roots {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: 30px;
+  align-items: center;
+  padding: 4px 0;
+  font-family: Georgia, "Times New Roman", serif;
+  font-size: 18px;
+  overflow-wrap: anywhere;
+}
+.archive-root-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 34px;
+  border: 1px solid var(--border-light);
+  background: var(--panel);
+  padding: 2px 7px;
+}
+.archive-meta {
+  display: grid;
+  gap: 8px;
+}
+.archive-inline {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.archive-inline input {
+  width: 118px;
+}
+.checkpoint-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+.checkpoint-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  border: 1px solid var(--border-light);
+  background: #fff;
+  padding: 8px;
+}
+.checkpoint-row small {
+  display: block;
+  color: var(--muted);
+  font-family: Arial, sans-serif;
+}
+.checkpoint-empty {
+  border: 1px dashed var(--border);
+  background: #fff;
+  color: var(--muted);
+  padding: 14px;
+  text-align: center;
+  font-family: Arial, sans-serif;
+}
+.server-action {
+  margin-top: 6px;
 }
 .thread-edited {
   font:

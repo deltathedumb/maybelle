@@ -18,7 +18,8 @@ from urllib.parse import urlparse
 
 APP_NAME = "Maybelle Wiki Host"
 DEFAULT_PORT = 80
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
+DEFAULT_CHECKPOINT_BUFFER_SIZE = 5
 
 
 def now():
@@ -73,6 +74,106 @@ def repair_ids(items, prefix):
         seen.add(x["id"])
     return items
 
+def clamp_int(value, minimum, maximum, fallback):
+    try:
+        n = int(value)
+    except (TypeError, ValueError):
+        return fallback
+    return max(minimum, min(maximum, n))
+
+
+def dedupe_strings(values):
+    out = []
+    seen = set()
+    for value in values if isinstance(values, list) else []:
+        s = str(value or "").strip()
+        if s and s not in seen:
+            seen.add(s)
+            out.append(s)
+    return out
+
+
+def normalize_root_record(r, index):
+    if not isinstance(r, dict):
+        r = {}
+    return {
+        "id": stable_id("root", r, index),
+        "glyph": str(r.get("glyph") or ""),
+        "root_name": str(r.get("root_name") or r.get("rootName") or ""),
+        "description": str(r.get("description") or ""),
+        "notes": str(r.get("notes") or ""),
+        "canon": bool(r.get("canon")),
+    }
+
+
+def normalize_entry_record(e, index):
+    if not isinstance(e, dict):
+        e = {}
+    fields = e.get("fields", {})
+    if not isinstance(fields, dict):
+        fields = {}
+    return {
+        "id": stable_id("entry", e, index),
+        "compound": str(e.get("compound") or e.get("word") or ""),
+        "description": str(e.get("description") or e.get("meaning") or ""),
+        "literal_meaning": str(
+            e.get("literal_meaning") or e.get("literalMeaning") or ""
+        ),
+        "notes": str(e.get("notes") or ""),
+        "fields": fields,
+        "canon": bool(e.get("canon")),
+    }
+
+
+def normalize_checkpoint_record(cp, index):
+    source = cp if isinstance(cp, dict) else {}
+    snapshot = source.get("snapshot")
+    if not isinstance(snapshot, dict):
+        snapshot = source
+    roots_source = snapshot.get("roots") if isinstance(snapshot.get("roots"), list) else []
+    dictionary_source = (
+        snapshot.get("dictionary") if isinstance(snapshot.get("dictionary"), list) else []
+    )
+    normalized_snapshot = {
+        "schema_version": CURRENT_SCHEMA_VERSION,
+        "updated_at": snapshot.get("updated_at") or snapshot.get("updatedAt") or now(),
+        "roots": [normalize_root_record(r, i) for i, r in enumerate(roots_source)],
+        "dictionary": [
+            normalize_entry_record(e, i) for i, e in enumerate(dictionary_source)
+        ],
+        "grammar_notes": str(
+            snapshot.get("grammar_notes") or snapshot.get("grammarNotes") or ""
+        ),
+        "frozen_root_ids": dedupe_strings(
+            snapshot.get("frozen_root_ids") or snapshot.get("frozenRootIds") or []
+        ),
+        "checkpoint_buffer_size": clamp_int(
+            snapshot.get("checkpoint_buffer_size")
+            or snapshot.get("checkpointBufferSize"),
+            1,
+            50,
+            DEFAULT_CHECKPOINT_BUFFER_SIZE,
+        ),
+        "next_checkpoint_at": snapshot.get("next_checkpoint_at")
+        or snapshot.get("nextCheckpointAt")
+        or None,
+        "checkpoints": [],
+    }
+    repair_ids(normalized_snapshot["roots"], "root")
+    repair_ids(normalized_snapshot["dictionary"], "entry")
+    return {
+        "id": stable_id("checkpoint", cp, index),
+        "created_at": source.get("created_at")
+        or source.get("createdAt")
+        or snapshot.get("created_at")
+        or snapshot.get("createdAt")
+        or now(),
+        "label": str(source.get("label") or snapshot.get("label") or ""),
+        "summary": str(source.get("summary") or snapshot.get("summary") or ""),
+        "snapshot": normalized_snapshot,
+    }
+
+
 def normalize_wiki(raw: Any):
     if not isinstance(raw, dict):
         raise ValueError("Wiki JSON root must be an object")
@@ -80,33 +181,19 @@ def normalize_wiki(raw: Any):
     raw_roots = raw.get("roots") if isinstance(raw.get("roots"), list) else []
     for i, r in enumerate(raw_roots):
         if isinstance(r, dict):
-            roots.append({
-                "id": stable_id("root", r, i),
-                "glyph": str(r.get("glyph") or ""),
-                "root_name": str(r.get("root_name") or r.get("rootName") or ""),
-                "description": str(r.get("description") or ""),
-                "notes": str(r.get("notes") or ""),
-                "canon": bool(r.get("canon")),
-            })
+            roots.append(normalize_root_record(r, i))
 
     dictionary = []
     entries = raw.get("dictionary", raw.get("entries", []))
     for i, e in enumerate(entries if isinstance(entries, list) else []):
         if isinstance(e, dict):
-            fields = (
-                e.get("fields", {}) if isinstance(e.get("fields", {}), dict) else {}
-            )
-            dictionary.append({
-                "id": stable_id("entry", e, i),
-                "compound": str(e.get("compound") or e.get("word") or ""),
-                "description": str(e.get("description") or e.get("meaning") or ""),
-                "literal_meaning": str(
-                    e.get("literal_meaning") or e.get("literalMeaning") or ""
-                ),
-                "notes": str(e.get("notes") or ""),
-                "fields": fields,
-                "canon": bool(e.get("canon")),
-            })
+            dictionary.append(normalize_entry_record(e, i))
+    checkpoints = []
+    raw_checkpoints = raw.get("checkpoints")
+    if isinstance(raw_checkpoints, list):
+        for i, cp in enumerate(raw_checkpoints):
+            if isinstance(cp, dict):
+                checkpoints.append(normalize_checkpoint_record(cp, i))
     dictionary.sort(
         key=lambda x: (
             (x.get("description") or "").casefold(),
@@ -120,6 +207,19 @@ def normalize_wiki(raw: Any):
         "roots": repair_ids(roots, "root"),
         "dictionary": repair_ids(dictionary, "entry"),
         "grammar_notes": str(raw.get("grammar_notes") or raw.get("grammarNotes") or ""),
+        "frozen_root_ids": dedupe_strings(
+            raw.get("frozen_root_ids") or raw.get("frozenRootIds") or []
+        ),
+        "checkpoint_buffer_size": clamp_int(
+            raw.get("checkpoint_buffer_size") or raw.get("checkpointBufferSize"),
+            1,
+            50,
+            DEFAULT_CHECKPOINT_BUFFER_SIZE,
+        ),
+        "next_checkpoint_at": raw.get("next_checkpoint_at")
+        or raw.get("nextCheckpointAt")
+        or None,
+        "checkpoints": checkpoints,
     }
 
 
@@ -152,6 +252,28 @@ def diff_wiki(old, new):
             "type": "grammar_notes.updated",
             "before": old.get("grammar_notes", ""),
             "after": new.get("grammar_notes", ""),
+        })
+    archive_before = {
+        "frozen_root_ids": old.get("frozen_root_ids", []),
+        "checkpoint_buffer_size": old.get(
+            "checkpoint_buffer_size", DEFAULT_CHECKPOINT_BUFFER_SIZE
+        ),
+        "next_checkpoint_at": old.get("next_checkpoint_at"),
+        "checkpoint_count": len(old.get("checkpoints", [])),
+    }
+    archive_after = {
+        "frozen_root_ids": new.get("frozen_root_ids", []),
+        "checkpoint_buffer_size": new.get(
+            "checkpoint_buffer_size", DEFAULT_CHECKPOINT_BUFFER_SIZE
+        ),
+        "next_checkpoint_at": new.get("next_checkpoint_at"),
+        "checkpoint_count": len(new.get("checkpoints", [])),
+    }
+    if archive_before != archive_after:
+        out.append({
+            "type": "archive.updated",
+            "before": archive_before,
+            "after": archive_after,
         })
     return out
 
@@ -610,6 +732,10 @@ class App:
                 "roots": [],
                 "dictionary": [],
                 "grammar_notes": "",
+                "frozen_root_ids": [],
+                "checkpoint_buffer_size": DEFAULT_CHECKPOINT_BUFFER_SIZE,
+                "next_checkpoint_at": None,
+                "checkpoints": [],
             }
         return normalize_wiki(read_json(self.wiki_path, {}))
 
@@ -626,7 +752,7 @@ class App:
 
 def make_handler(app: App):
     class H(BaseHTTPRequestHandler):
-        server_version = "MaybelleWikiHost/3.0"
+        server_version = "MaybelleWikiHost/4.0"
 
         def end_headers(self):
             self.send_header("Access-Control-Allow-Origin", "*")
