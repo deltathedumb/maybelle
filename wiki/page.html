@@ -400,8 +400,10 @@
                     placeholder="encrypt exported archives"
                   />
                   <div class="toolbar archive-actions">
-                    <button id="archiveSaveButton" class="primary">Save</button
-                    ><button id="archiveLoadButton">Load</button>
+                    <button id="archiveSaveButton" class="primary">
+                      Export
+                    </button
+                    ><button id="archiveLoadButton">Import</button>
                     <input
                       id="archiveFileInput"
                       type="file"
@@ -452,6 +454,20 @@
         <div class="modal-actions">
           <button id="confirmCancelButton">Cancel</button
           ><button id="confirmOkButton" class="danger">Confirm</button>
+        </div>
+      </div>
+    </div>
+    <div id="promptModal" class="modal-backdrop">
+      <div class="modal-box">
+        <h2 id="promptModalTitle" class="modal-title">Input</h2>
+        <div id="promptModalMessage" class="modal-message"></div>
+        <div class="modal-message">
+          <input id="promptModalInput" class="modal-input" />
+          <textarea id="promptModalTextarea" class="modal-textarea hidden"></textarea>
+        </div>
+        <div class="modal-actions">
+          <button id="promptModalCancelButton">Cancel</button
+          ><button id="promptModalOkButton" class="danger">OK</button>
         </div>
       </div>
     </div>

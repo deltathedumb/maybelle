@@ -234,15 +234,31 @@ function runRichCommand(cmd) {
   document.execCommand(cmd, false, null);
   $("threadRichEditor").focus();
 }
-function addRichLink() {
-  const url = prompt("Link URL:");
+async function addRichLink() {
+  const url = await showPrompt({
+    title: "Insert Link",
+    message: "Enter a URL for the link.",
+    value: "",
+    placeholder: "https://example.com",
+    confirmText: "Insert",
+  });
   if (url) document.execCommand("createLink", false, url);
   $("threadRichEditor").focus();
 }
 async function renameSelectedThread() {
   if (!selectedThreadId) return;
-  const name = prompt("New thread name:");
-  if (!name) return;
+  const name = await showPrompt({
+    title: "Rename Thread",
+    message: "Enter a new thread name.",
+    value:
+      $("selectedThreadTitle")?.textContent &&
+      $("selectedThreadTitle").textContent !== "No thread selected"
+        ? $("selectedThreadTitle").textContent
+        : "",
+    placeholder: "Thread name",
+    confirmText: "Rename",
+  });
+  if (name === null || !name.trim()) return;
   const admin_pass = typeof currentAdminPass === "function" ? currentAdminPass() : "";
   const r = await threadsRequest("/api/threads/rename", {
     method: "POST",
@@ -280,7 +296,13 @@ async function editThreadMessage(message_id) {
       .querySelector(`[data-edit-message="${CSS.escape(message_id)}"]`)
       ?.closest(".thread-message")
       ?.querySelector(".thread-message-body")?.innerHTML || "";
-  const html = prompt("Edit message HTML:", current);
+  const html = await showPrompt({
+    title: "Edit Message",
+    message: "Edit the message HTML.",
+    value: current,
+    multiline: true,
+    confirmText: "Save",
+  });
   if (html === null) return;
   const admin_pass =
     typeof currentAdminPass === "function" ? currentAdminPass() : "";

@@ -574,6 +574,17 @@ main {
     14px Arial,
     sans-serif;
 }
+.modal-input,
+.modal-textarea {
+  width: 100%;
+}
+.modal-textarea {
+  min-height: 180px;
+  resize: vertical;
+  font:
+    14px Arial,
+    sans-serif;
+}
 .modal-actions {
   display: flex;
   justify-content: flex-end;

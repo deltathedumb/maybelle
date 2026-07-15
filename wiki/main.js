@@ -1256,6 +1256,63 @@ function showAlert(o = {}) {
     danger: false,
   });
 }
+function showPrompt(o = {}) {
+  const m = $("promptModal"),
+    title = $("promptModalTitle"),
+    msg = $("promptModalMessage"),
+    input = $("promptModalInput"),
+    textarea = $("promptModalTextarea"),
+    ok = $("promptModalOkButton"),
+    cancel = $("promptModalCancelButton");
+  const multiline = Boolean(o.multiline);
+  title.textContent = o.title || "Input";
+  msg.textContent = o.message || "";
+  ok.textContent = o.confirmText || "OK";
+  input.classList.toggle("hidden", multiline);
+  textarea.classList.toggle("hidden", !multiline);
+  input.value = multiline ? "" : String(o.value ?? "");
+  textarea.value = multiline ? String(o.value ?? "") : "";
+  input.placeholder = o.placeholder || "";
+  textarea.placeholder = o.placeholder || "";
+  input.type = o.type || "text";
+  input.spellcheck = o.spellcheck ?? true;
+  textarea.spellcheck = o.spellcheck ?? true;
+  m.classList.add("open");
+  return new Promise((res) => {
+    function close(v) {
+      m.classList.remove("open");
+      ok.onclick = cancel.onclick = null;
+      m.onkeydown = null;
+      res(v);
+    }
+    function submit() {
+      close(multiline ? textarea.value : input.value);
+    }
+    ok.onclick = submit;
+    cancel.onclick = () => close(null);
+    m.onclick = (e) => {
+      if (e.target === m) close(null);
+    };
+    m.onkeydown = (e) => {
+      if (e.key === "Escape") close(null);
+      if (!multiline && e.key === "Enter") {
+        e.preventDefault();
+        submit();
+      }
+      if (multiline && e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        submit();
+      }
+    };
+    requestAnimationFrame(() => {
+      (multiline ? textarea : input).focus();
+      if (!multiline) {
+        const len = input.value.length;
+        input.setSelectionRange(len, len);
+      }
+    });
+  });
+}
 function buildKeyboard() {
   const rows = ["АБВГДЕЁЖЗИЙ", "КЛМНОПРСТУФ", "ХЦЧШЩЪЫЬЭЮЯ"];
   $("keyboardRows").innerHTML =
