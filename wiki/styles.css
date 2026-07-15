@@ -272,6 +272,7 @@ main {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
   gap: 10px;
+  align-items: start;
   width: 100%;
   border: 0;
   border-bottom: 1px solid var(--border-light);
@@ -288,19 +289,18 @@ main {
   font-size: 22px;
   text-align: center;
   align-self: start;
+  display: block;
   overflow-wrap: anywhere;
   line-height: 1.1;
 }
-.list-row > span:last-child {
-  display: block;
-}
 .list-text {
-  display: grid;
-  gap: 2px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
   min-width: 0;
+  align-items: flex-start;
 }
 .list-title {
-  display: block;
   font:
     bold 13px Arial,
     sans-serif;
@@ -309,7 +309,6 @@ main {
   overflow-wrap: anywhere;
 }
 .list-subtitle {
-  display: block;
   font:
     12px Arial,
     sans-serif;
