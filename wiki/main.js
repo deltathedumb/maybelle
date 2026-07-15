@@ -240,8 +240,12 @@ function normalizeCheckpointRecord(cp, i) {
     grammar_notes: String(
       snapshot.grammar_notes || snapshot.grammarNotes || "",
     ),
-    frozen_root_ids: dedupeStrings(
-      snapshot.frozen_root_ids || snapshot.frozenRootIds || [],
+    canon_root_ids: dedupeStrings(
+      snapshot.canon_root_ids ||
+        snapshot.canonRootIds ||
+        snapshot.frozen_root_ids ||
+        snapshot.frozenRootIds ||
+        [],
     ),
     checkpoint_buffer_size: clampInt(
       snapshot.checkpoint_buffer_size || snapshot.checkpointBufferSize,
@@ -294,7 +298,7 @@ function createEmptyData() {
     roots: [],
     dictionary: [],
     grammar_notes: "",
-    frozen_root_ids: [],
+    canon_root_ids: [],
     checkpoint_buffer_size: DEFAULT_CHECKPOINT_BUFFER_SIZE,
     next_checkpoint_at: new Date(Date.now() + CHECKPOINT_INTERVAL_MS).toISOString(),
     checkpoints: [],
@@ -319,8 +323,12 @@ function normalizeImportedData(raw) {
     roots: roots.map((r, i) => normalizeRootRecord(r, i)),
     dictionary: dict.map((e, i) => normalizeEntryRecord(e, i)),
     grammar_notes: String(raw.grammar_notes || raw.grammarNotes || ""),
-    frozen_root_ids: dedupeStrings(
-      raw.frozen_root_ids || raw.frozenRootIds || [],
+    canon_root_ids: dedupeStrings(
+      raw.canon_root_ids ||
+        raw.canonRootIds ||
+        raw.frozen_root_ids ||
+        raw.frozenRootIds ||
+        [],
     ),
     checkpoint_buffer_size: clampInt(
       raw.checkpoint_buffer_size || raw.checkpointBufferSize,
@@ -477,7 +485,10 @@ function syncEditorsToData() {
       DEFAULT_CHECKPOINT_BUFFER_SIZE,
     );
   }
-  appData.frozen_root_ids = dedupeStrings(appData.frozen_root_ids || []);
+  appData.canon_root_ids = dedupeStrings(
+    appData.canon_root_ids || appData.frozen_root_ids || [],
+  );
+  delete appData.frozen_root_ids;
   sortDictionary();
 }
 function collectExtraFields() {
@@ -688,7 +699,7 @@ function renderRootEditor() {
     return;
   }
   const locked = r.canon && !$("unlockCanonRoots")?.checked;
-  const frozen = isRootFrozen(r.id);
+  const canonLocked = isRootCanon(r.id);
   $("rootEmptyState").classList.add("hidden");
   $("rootEditorFields").classList.remove("hidden");
   $("rootEditorTitle").textContent =
@@ -700,10 +711,10 @@ function renderRootEditor() {
   ["rootGlyphInput", "rootNameInput", "rootDescriptionInput"].forEach(
     (id) => ($(id).disabled = locked),
   );
-  $("deleteRootButton").disabled = locked || frozen;
+  $("deleteRootButton").disabled = locked || canonLocked;
   $("rootCanonNotice").classList.toggle("hidden", !r.canon);
-  $("rootCanonNotice").textContent = frozen
-    ? "Frozen root: it cannot be deleted, but it can still be edited."
+  $("rootCanonNotice").textContent = canonLocked
+    ? "Canon root: it cannot be deleted, but it can still be edited."
     : locked
       ? "Canon root: locked to preserve the stable Maybelle root table. Use Unlock canon root editing to change it."
       : "Canon root editing is unlocked.";
@@ -752,8 +763,8 @@ function renderEntryEditor() {
 function cloneJson(v) {
   return JSON.parse(JSON.stringify(v));
 }
-function isRootFrozen(rootId) {
-  return appData.frozen_root_ids.includes(rootId);
+function isRootCanon(rootId) {
+  return appData.canon_root_ids.includes(rootId);
 }
 function renderArchiveRootsDisplay() {
   const host = $("archiveRootsDisplay");
@@ -813,7 +824,7 @@ function currentArchiveSnapshot() {
     roots: cloneJson(appData.roots || []),
     dictionary: cloneJson(appData.dictionary || []),
     grammar_notes: appData.grammar_notes || "",
-    frozen_root_ids: cloneJson(appData.frozen_root_ids || []),
+    canon_root_ids: cloneJson(appData.canon_root_ids || []),
   };
 }
 function renderCheckpointList() {
@@ -936,7 +947,7 @@ async function revertToCheckpoint(checkpointId) {
   appData.roots = cloneJson(snapshot.roots || []);
   appData.dictionary = cloneJson(snapshot.dictionary || []);
   appData.grammar_notes = snapshot.grammar_notes || "";
-  appData.frozen_root_ids = cloneJson(snapshot.frozen_root_ids || []);
+  appData.canon_root_ids = cloneJson(snapshot.canon_root_ids || []);
   appData.updated_at = new Date().toISOString();
   setNextCheckpoint();
   trimCheckpointBuffer();
@@ -982,8 +993,8 @@ async function deleteSelectedRoot() {
   if (!selectedRootId) return;
   const r = appData.roots.find((x) => x.id === selectedRootId);
   if (!r) return;
-  if (isRootFrozen(r.id)) {
-    setStatus("Frozen roots cannot be deleted.", "warning");
+  if (isRootCanon(r.id)) {
+    setStatus("Canon roots cannot be deleted.", "warning");
     return;
   }
   if (r.canon && !$("unlockCanonRoots")?.checked) {
@@ -1533,14 +1544,14 @@ function bindEvents() {
       setStatus(err.message || "Could not load archive.", "error"),
     );
   $("archivePasswordInput").addEventListener("input", persistArchivePassword);
-  $("archiveFreezeButton").onclick = () =>
+  $("archiveCanonButton").onclick = () =>
     (async () => {
-      appData.frozen_root_ids = dedupeStrings(appData.roots.map((r) => r.id));
+      appData.canon_root_ids = dedupeStrings(appData.roots.map((r) => r.id));
       trimCheckpointBuffer();
       if (BACKEND_MODE) await saveToBackend(false);
       else localStorage.setItem(STORAGE_KEY, JSON.stringify(appData));
       renderEverything();
-      setStatus("Current roots are frozen against deletion.", "success");
+      setStatus("Current roots are now canon roots.", "success");
     })().catch((e) => setStatus(e.message, "error"));
   $("makeCheckpointButton").onclick = () =>
     makeCheckpoint(false).catch((e) => setStatus(e.message, "error"));
@@ -1613,7 +1624,10 @@ async function boot() {
     repairDuplicateIds();
     trimCheckpointBuffer();
     if (!appData.next_checkpoint_at) setNextCheckpoint();
-    appData.frozen_root_ids = dedupeStrings(appData.frozen_root_ids || []);
+    appData.canon_root_ids = dedupeStrings(
+      appData.canon_root_ids || appData.frozen_root_ids || [],
+    );
+    delete appData.frozen_root_ids;
     setStatus(
       BACKEND_MODE ? "Loaded wiki from server file." : "Loaded local wiki.",
       "success",

@@ -144,8 +144,12 @@ def normalize_checkpoint_record(cp, index):
         "grammar_notes": str(
             snapshot.get("grammar_notes") or snapshot.get("grammarNotes") or ""
         ),
-        "frozen_root_ids": dedupe_strings(
-            snapshot.get("frozen_root_ids") or snapshot.get("frozenRootIds") or []
+        "canon_root_ids": dedupe_strings(
+            snapshot.get("canon_root_ids")
+            or snapshot.get("canonRootIds")
+            or snapshot.get("frozen_root_ids")
+            or snapshot.get("frozenRootIds")
+            or []
         ),
         "checkpoint_buffer_size": clamp_int(
             snapshot.get("checkpoint_buffer_size")
@@ -207,8 +211,12 @@ def normalize_wiki(raw: Any):
         "roots": repair_ids(roots, "root"),
         "dictionary": repair_ids(dictionary, "entry"),
         "grammar_notes": str(raw.get("grammar_notes") or raw.get("grammarNotes") or ""),
-        "frozen_root_ids": dedupe_strings(
-            raw.get("frozen_root_ids") or raw.get("frozenRootIds") or []
+        "canon_root_ids": dedupe_strings(
+            raw.get("canon_root_ids")
+            or raw.get("canonRootIds")
+            or raw.get("frozen_root_ids")
+            or raw.get("frozenRootIds")
+            or []
         ),
         "checkpoint_buffer_size": clamp_int(
             raw.get("checkpoint_buffer_size") or raw.get("checkpointBufferSize"),
@@ -254,7 +262,7 @@ def diff_wiki(old, new):
             "after": new.get("grammar_notes", ""),
         })
     archive_before = {
-        "frozen_root_ids": old.get("frozen_root_ids", []),
+        "canon_root_ids": old.get("canon_root_ids", []),
         "checkpoint_buffer_size": old.get(
             "checkpoint_buffer_size", DEFAULT_CHECKPOINT_BUFFER_SIZE
         ),
@@ -262,7 +270,7 @@ def diff_wiki(old, new):
         "checkpoint_count": len(old.get("checkpoints", [])),
     }
     archive_after = {
-        "frozen_root_ids": new.get("frozen_root_ids", []),
+        "canon_root_ids": new.get("canon_root_ids", []),
         "checkpoint_buffer_size": new.get(
             "checkpoint_buffer_size", DEFAULT_CHECKPOINT_BUFFER_SIZE
         ),
@@ -732,7 +740,7 @@ class App:
                 "roots": [],
                 "dictionary": [],
                 "grammar_notes": "",
-                "frozen_root_ids": [],
+                "canon_root_ids": [],
                 "checkpoint_buffer_size": DEFAULT_CHECKPOINT_BUFFER_SIZE,
                 "next_checkpoint_at": None,
                 "checkpoints": [],
